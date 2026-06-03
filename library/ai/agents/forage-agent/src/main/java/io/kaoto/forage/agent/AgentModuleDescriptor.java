@@ -106,6 +106,19 @@ public class AgentModuleDescriptor implements ForageModuleDescriptor<AgentConfig
             }
         }
 
+        return translateModelProperties(modelKind, config);
+    }
+
+    @Override
+    public Map<String, String> translatePropertiesForExport(String prefix, AgentConfig config) {
+        String modelKind = config.modelKind();
+        if (modelKind == null) {
+            return Map.of();
+        }
+        return translateModelProperties(modelKind, config);
+    }
+
+    private Map<String, String> translateModelProperties(String modelKind, AgentConfig config) {
         return switch (modelKind) {
             case PROVIDER_OLLAMA -> translateOllamaProperties(config);
             case PROVIDER_OPENAI -> translateOpenAiProperties(config);
