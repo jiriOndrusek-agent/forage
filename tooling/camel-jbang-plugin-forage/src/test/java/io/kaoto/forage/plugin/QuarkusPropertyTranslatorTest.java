@@ -131,7 +131,7 @@ class QuarkusPropertyTranslatorTest {
                     .containsOnly("jdbc");
             assertThat(result.groups())
                     .extracting(QuarkusPropertyTranslator.TranslationGroup::prefix)
-                    .contains("ds1", "ds2");
+                    .containsExactlyInAnyOrder("ds1", "ds2");
         }
 
         @Test
