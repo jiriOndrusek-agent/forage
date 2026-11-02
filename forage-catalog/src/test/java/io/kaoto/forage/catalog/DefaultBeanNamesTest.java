@@ -19,6 +19,8 @@ import io.kaoto.forage.jms.ConnectionFactoryBeanFactory;
 import io.kaoto.forage.jms.common.JmsModuleDescriptor;
 import io.kaoto.forage.messaging.spring.rabbitmq.SpringRabbitMQBeanFactory;
 import io.kaoto.forage.messaging.spring.rabbitmq.common.SpringRabbitMQConstants;
+import io.kaoto.forage.models.embeddings.EmbeddingModelBeanFactory;
+import io.kaoto.forage.models.embeddings.EmbeddingModelModuleDescriptor;
 import io.kaoto.forage.security.keycloak.KeycloakSecurityPolicyProvider;
 import io.kaoto.forage.security.shiro.ShiroSecurityPolicyProvider;
 import io.kaoto.forage.security.spring.SpringSecurityPolicyProvider;
@@ -44,6 +46,8 @@ class DefaultBeanNamesTest {
                 Arguments.of(
                         ConnectionFactoryBeanFactory.class, supply(() -> new JmsModuleDescriptor().defaultBeanName())),
                 Arguments.of(AgentBeanFactory.class, supply(() -> new AgentModuleDescriptor().defaultBeanName())),
+                Arguments.of(EmbeddingModelBeanFactory.class, supply(() -> new EmbeddingModelModuleDescriptor()
+                        .defaultBeanName())),
                 Arguments.of(CxfBeanFactory.class, supply(() -> new CxfModuleDescriptor().defaultBeanName())),
                 Arguments.of(InfluxDBBeanFactory.class, supply(() -> new InfluxDBModuleDescriptor().defaultBeanName())),
                 Arguments.of(

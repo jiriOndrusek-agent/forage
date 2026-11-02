@@ -93,7 +93,8 @@ The `agent` parameter references a named bean configured via properties. In this
 - **forage-vectordb-weaviate** - Weaviate vector database prodiver
 
 #### Embeddings
-- **embeddings** - Embedding model providers (coming soon)
+- **forage-embedding-model** - Embedding model beans (`forage.[<name>.]embeddings.kind`) for plain Camel and Camel JBang
+- **forage-model-embeddings-ollama** - Ollama embedding model provider
 
 ### InfluxDB Modules
 

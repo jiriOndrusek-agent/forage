@@ -758,6 +758,8 @@ public final class ForageCatalogReader {
                 .flatMap(List::stream)
                 .filter(featureBeans -> feature.equalsIgnoreCase(featureBeans.getFeature()))
                 .flatMap(this::extractBeanNamesFromFeature)
+                // A bean can be listed by several factories (e.g. ollama under Agent and Embedding Model)
+                .distinct()
                 .toList();
     }
 

@@ -151,6 +151,29 @@ class ForagePropertyValidatorTest {
     }
 
     @Test
+    void testEmbeddingModelProperties() throws IOException {
+        createPropertiesFile(
+                "application.properties",
+                "forage.embeddings.kind=ollama",
+                "forage.docs.embeddings.kind=ollama",
+                "forage.docs.ollama.embedding.model.name=nomic-embed-text");
+
+        assertThat(ForagePropertyValidator.validate(tempDir.toFile(), catalog).hasWarnings())
+                .isFalse();
+    }
+
+    @Test
+    void testTypoInEmbeddingModelKind() throws IOException {
+        createPropertiesFile("application.properties", "forage.embeddings.kind=olama");
+
+        ValidationResult result = ForagePropertyValidator.validate(tempDir.toFile(), catalog);
+
+        // ollama is listed by both the Agent and the Embedding Model factory, but offered once
+        assertThat(result.getWarnings()).singleElement().satisfies(w -> assertThat(w.getMessage())
+                .endsWith("Valid options: ollama"));
+    }
+
+    @Test
     void testNamedInstanceProperties() throws IOException {
         // Given: named instance properties
         File propsFile = createPropertiesFile(
