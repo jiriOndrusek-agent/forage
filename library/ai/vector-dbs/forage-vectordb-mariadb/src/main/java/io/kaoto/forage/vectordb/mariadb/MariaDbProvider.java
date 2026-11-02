@@ -8,7 +8,7 @@ import dev.langchain4j.store.embedding.mariadb.MariaDbEmbeddingStore;
 
 @ForageBean(
         value = "mariadb",
-        components = {"camel-langchain4j-embeddings"},
+        components = {"camel-langchain4j-embeddingstore"},
         description = "MariaDB with vector support")
 public class MariaDbProvider implements EmbeddingStoreProvider {
     private static final Logger LOG = LoggerFactory.getLogger(MariaDbProvider.class);
