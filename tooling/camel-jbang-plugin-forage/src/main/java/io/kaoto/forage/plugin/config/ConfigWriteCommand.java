@@ -396,7 +396,7 @@ public class ConfigWriteCommand extends CamelCommand {
 
             // Add bean GAV if kind is specified
             if (kind != null && !kind.isEmpty()) {
-                baseDeps.addAll(catalog.getBeanGavs(kind));
+                baseDeps.addAll(catalog.getBeanGavs(factoryTypeKey, kind));
             }
 
             // Add factory variant GAVs

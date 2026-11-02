@@ -408,4 +408,25 @@ class CatalogDrivenExportCustomizerTest {
         // Should include the spring boot starter (variant-specific, not base)
         assertThat(deps).anyMatch(d -> d.contains("forage-jdbc-starter:"));
     }
+
+    @Test
+    void testAgentOllama_addsChatAndEmbeddingModels() throws Exception {
+        CatalogDrivenExportCustomizer customizer = createCustomizer("forage.agent.model.kind=ollama\n");
+
+        Set<String> deps = customizer.resolveRuntimeDependencies(RuntimeType.MAIN);
+        // The agent builds its RAG embedding model with the provider of its chat model kind
+        assertThat(deps).anyMatch(d -> d.contains("forage-model-ollama:"));
+        assertThat(deps).anyMatch(d -> d.contains("forage-model-embeddings-ollama:"));
+    }
+
+    @Test
+    void testEmbeddingModelOllama_addsOnlyEmbeddingModel() throws Exception {
+        CatalogDrivenExportCustomizer customizer = createCustomizer("forage.embeddings.kind=ollama\n");
+
+        Set<String> deps = customizer.resolveRuntimeDependencies(RuntimeType.MAIN);
+        assertThat(deps).anyMatch(d -> d.contains("forage-embedding-model:"));
+        assertThat(deps).anyMatch(d -> d.contains("forage-model-embeddings-ollama:"));
+        // The Agent factory also lists an "ollama" bean (the chat model)
+        assertThat(deps).noneMatch(d -> d.contains("forage-model-ollama:"));
+    }
 }
