@@ -66,6 +66,13 @@
         -->
 
         <!-- Forage modules with ForageBean annotations - required for complete catalog generation -->
+        <!-- Keep before the agent modules: tooling maps the shared "ollama" bean to the last factory listing it -->
+        <dependency>
+            <groupId>io.kaoto.forage</groupId>
+            <artifactId>forage-embedding-model</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
         <dependency>
             <groupId>io.kaoto.forage</groupId>
             <artifactId>forage-agent-factories</artifactId>
