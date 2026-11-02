@@ -14,5 +14,6 @@
 
     <modules>
         <module>forage-model-embeddings-ollama</module>
+        <module>forage-embedding-model</module>
     </modules>
 </project>

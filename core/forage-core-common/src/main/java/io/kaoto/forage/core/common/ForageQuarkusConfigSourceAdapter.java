@@ -13,7 +13,6 @@ import org.eclipse.microprofile.config.spi.ConfigSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.kaoto.forage.core.util.config.Config;
-import io.kaoto.forage.core.util.config.ConfigHelper;
 import io.kaoto.forage.core.util.config.ConfigStore;
 import io.kaoto.forage.core.util.config.PropertyFileLocator;
 import io.smallrye.config.ConfigSourceContext;
@@ -51,7 +50,7 @@ public abstract class ForageQuarkusConfigSourceAdapter<C extends Config> impleme
         ConfigStore.getInstance().setClassLoader(Thread.currentThread().getContextClassLoader());
 
         C defaultConfig = desc.createConfig(null);
-        String namedRegexp = ConfigHelper.getNamedPropertyRegexp(desc.modulePrefix());
+        String namedRegexp = desc.namedPropertyRegexp();
         Set<String> prefixes = new HashSet<>(ConfigStore.getInstance().readPrefixes(defaultConfig, namedRegexp));
         prefixes.addAll(discoverPrefixesFromContext(context, namedRegexp));
 
@@ -59,7 +58,7 @@ public abstract class ForageQuarkusConfigSourceAdapter<C extends Config> impleme
 
         Map<String, String> configuration = new HashMap<>();
 
-        String defaultRegexp = ConfigHelper.getDefaultPropertyRegexp(desc.modulePrefix());
+        String defaultRegexp = desc.defaultPropertyRegexp();
         if (!prefixes.isEmpty()) {
             for (String name : prefixes) {
                 C config = desc.createConfig(name);
