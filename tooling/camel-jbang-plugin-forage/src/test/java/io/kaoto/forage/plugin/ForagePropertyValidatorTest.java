@@ -174,6 +174,16 @@ class ForagePropertyValidatorTest {
     }
 
     @Test
+    void testOllamaChatModelPropertiesBelongToAgentFactory() throws IOException {
+        // The catalog maps the shared ollama bean to the last factory listing it, so
+        // forage-embedding-model must stay before the agent modules in forage-catalog/pom.xml
+        createPropertiesFile("application.properties", "forage.ollama.model.name=llama3");
+
+        assertThat(ForagePropertyValidator.validate(tempDir.toFile(), catalog).hasWarnings())
+                .isFalse();
+    }
+
+    @Test
     void testNamedInstanceProperties() throws IOException {
         // Given: named instance properties
         File propsFile = createPropertiesFile(
