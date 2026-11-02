@@ -140,6 +140,50 @@ class ForageCatalogReaderTest {
     }
 
     @Test
+    void testBeanNameSharedByTwoFactories() throws IOException {
+        String json =
+                """
+                {
+                  "factories": [
+                    {
+                      "name": "DataSource",
+                      "configEntries": [ { "name": "forage.jdbc.db.kind", "type": "bean-name" } ],
+                      "beansByFeature": [ { "feature": "javax.sql.DataSource", "beans": [ {
+                        "name": "mariadb",
+                        "gav": "io.kaoto.forage:forage-jdbc-mariadb:1.0",
+                        "runtimeDependencies": { "quarkus": [ "mvn:io.quarkus:quarkus-jdbc-mariadb" ] }
+                      } ] } ]
+                    },
+                    {
+                      "name": "Embedding Store",
+                      "configEntries": [ { "name": "forage.vectordb.kind", "type": "bean-name" } ],
+                      "beansByFeature": [ { "feature": "Embedding Store", "beans": [ {
+                        "name": "mariadb",
+                        "gav": "io.kaoto.forage:forage-vectordb-mariadb:1.0"
+                      } ] } ]
+                    }
+                  ]
+                }
+                """;
+        ForageCatalogReader shared =
+                ForageCatalogReader.fromInputStream(new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)));
+
+        // The first factory listing the name owns it
+        assertThat(shared.findFactoryTypeKeyForBeanName("mariadb")).hasValue("jdbc");
+        assertThat(shared.getBeanFeature("mariadb")).hasValue("javax.sql.DataSource");
+
+        assertThat(shared.getBeanGavs("mariadb"))
+                .containsExactlyInAnyOrder(
+                        "io.kaoto.forage:forage-jdbc-mariadb:1.0", "io.kaoto.forage:forage-vectordb-mariadb:1.0");
+        assertThat(shared.getBeanGavs("vectordb", "mariadb"))
+                .containsExactly("io.kaoto.forage:forage-vectordb-mariadb:1.0");
+        assertThat(shared.getBeanRuntimeDependencies("vectordb", "mariadb", "quarkus"))
+                .isEmpty();
+        assertThat(shared.getBeanRuntimeDependencies("jdbc", "mariadb", "quarkus"))
+                .containsExactly("mvn:io.quarkus:quarkus-jdbc-mariadb");
+    }
+
+    @Test
     void testGetBeanFeature() {
         Optional<String> feature = reader.getBeanFeature("postgresql");
         assertThat(feature).isPresent().hasValue("javax.sql.DataSource");

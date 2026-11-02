@@ -7,10 +7,12 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import io.kaoto.forage.catalog.model.ConditionalBeanGroup;
 import io.kaoto.forage.catalog.model.ConfigEntry;
@@ -189,10 +191,12 @@ public final class ForageCatalogReader {
                             for (ForageBean bean : beans) {
                                 String beanName = bean.getName();
                                 if (beanName != null && !beanName.isEmpty()) {
-                                    beanNameToFactoryKey.put(beanName.toLowerCase(), factoryTypeKey);
-                                    beanNameToFeature.put(beanName.toLowerCase(), featureName);
+                                    // A bean name listed by several factories (e.g. ollama, redis) belongs to
+                                    // the first factory, like the config entries below
+                                    beanNameToFactoryKey.putIfAbsent(beanName.toLowerCase(), factoryTypeKey);
+                                    beanNameToFeature.putIfAbsent(beanName.toLowerCase(), featureName);
                                     if (bean.getDefaultBeanName() != null) {
-                                        beanNameToDefaultBeanName.put(
+                                        beanNameToDefaultBeanName.putIfAbsent(
                                                 beanName.toLowerCase(), bean.getDefaultBeanName());
                                     }
 
@@ -568,6 +572,22 @@ public final class ForageCatalogReader {
     }
 
     /**
+     * Gets the GAV coordinates of the beans with the given name within one factory. Unlike
+     * {@link #getBeanGavs(String)}, beans of other factories sharing the name (e.g., "mariadb"
+     * for DataSource and Embedding Store) are ignored.
+     *
+     * @param factoryTypeKey the factory type key (e.g., "jdbc", "agent")
+     * @param beanName the bean name (e.g., "mariadb", "ollama")
+     * @return a collection of matching GAVs, or an empty collection if none found
+     */
+    public Collection<String> getBeanGavs(String factoryTypeKey, String beanName) {
+        return beansOfFactory(factoryTypeKey, beanName)
+                .map(ForageBean::getGav)
+                .filter(gav -> gav != null && !gav.isEmpty())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    /**
      * Gets the additional dependencies for a specific variant of a factory.
      *
      * @param factoryTypeKey the factory type key (e.g., "jdbc", "jms")
@@ -649,6 +669,35 @@ public final class ForageCatalogReader {
             }
         }
         return List.of();
+    }
+
+    /**
+     * Gets runtime dependencies of the beans with the given name within one factory, for a variant.
+     * Unlike {@link #getBeanRuntimeDependencies(String, String)}, beans of other factories sharing
+     * the name are ignored.
+     *
+     * @param factoryTypeKey the factory type key (e.g., "jdbc", "vectordb")
+     * @param beanName the bean name (e.g., "mariadb")
+     * @param variantName the variant name (e.g., "quarkus", "springboot")
+     * @return list of GAVs for the given variant, or empty list if none
+     */
+    public List<String> getBeanRuntimeDependencies(String factoryTypeKey, String beanName, String variantName) {
+        if (variantName == null) {
+            return List.of();
+        }
+        return beansOfFactory(factoryTypeKey, beanName)
+                .filter(bean -> bean.getRuntimeDependencies() != null)
+                .flatMap(bean ->
+                        bean.getRuntimeDependencies().getOrDefault(variantName.toLowerCase(), List.of()).stream())
+                .distinct()
+                .toList();
+    }
+
+    private Stream<ForageBean> beansOfFactory(String factoryTypeKey, String beanName) {
+        if (beanName == null) {
+            return Stream.empty();
+        }
+        return getAllBeansForFactory(factoryTypeKey).stream().filter(bean -> beanName.equalsIgnoreCase(bean.getName()));
     }
 
     /**
