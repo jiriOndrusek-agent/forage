@@ -15,5 +15,7 @@
     <modules>
         <module>forage-model-embeddings-ollama</module>
         <module>forage-embedding-model</module>
+        <module>spring-boot</module>
+        <module>camel-quarkus</module>
     </modules>
 </project>
