@@ -55,6 +55,9 @@ public final class ForageCatalogReader {
     private final Map<String, Set<String>> configEntryToBeanNames;
     // Maps bean names to the name they are registered under when configured without an instance name
     private final Map<String, String> beanNameToDefaultBeanName;
+    // Maps bean names and config entry names to all factory type keys listing them, in catalog order
+    private final Map<String, Set<String>> beanNameToFactoryKeys;
+    private final Map<String, Set<String>> configEntryToFactoryKeys;
 
     private ForageCatalogReader(ForageCatalog catalog) {
         this.catalog = catalog;
@@ -68,6 +71,8 @@ public final class ForageCatalogReader {
         this.configEntryToFactoryKey = new HashMap<>();
         this.configEntryToBeanNames = new HashMap<>();
         this.beanNameToDefaultBeanName = new HashMap<>();
+        this.beanNameToFactoryKeys = new HashMap<>();
+        this.configEntryToFactoryKeys = new HashMap<>();
         parseCatalog();
     }
 
@@ -173,6 +178,9 @@ public final class ForageCatalogReader {
                 factoryMetadataByKey.put(factoryTypeKey, metadata);
                 for (ConfigEntry entry : configEntries) {
                     configEntryToFactoryKey.putIfAbsent(entry.getName(), factoryTypeKey);
+                    configEntryToFactoryKeys
+                            .computeIfAbsent(entry.getName(), k -> new LinkedHashSet<>())
+                            .add(factoryTypeKey);
                 }
 
                 // Store factory variants
@@ -194,6 +202,9 @@ public final class ForageCatalogReader {
                                     // A bean name listed by several factories (e.g. ollama, redis) belongs to
                                     // the first factory, like the config entries below
                                     beanNameToFactoryKey.putIfAbsent(beanName.toLowerCase(), factoryTypeKey);
+                                    beanNameToFactoryKeys
+                                            .computeIfAbsent(beanName.toLowerCase(), k -> new LinkedHashSet<>())
+                                            .add(factoryTypeKey);
                                     beanNameToFeature.putIfAbsent(beanName.toLowerCase(), featureName);
                                     if (bean.getDefaultBeanName() != null) {
                                         beanNameToDefaultBeanName.putIfAbsent(
@@ -213,6 +224,9 @@ public final class ForageCatalogReader {
                                     if (beanConfigEntries != null) {
                                         for (ConfigEntry configEntry : beanConfigEntries) {
                                             configEntryToFactoryKey.putIfAbsent(configEntry.getName(), factoryTypeKey);
+                                            configEntryToFactoryKeys
+                                                    .computeIfAbsent(configEntry.getName(), k -> new LinkedHashSet<>())
+                                                    .add(factoryTypeKey);
                                             configEntryToBeanNames
                                                     .computeIfAbsent(configEntry.getName(), k -> new HashSet<>())
                                                     .add(beanName);
@@ -405,6 +419,30 @@ public final class ForageCatalogReader {
     }
 
     /**
+     * Finds all factories listing a bean name, in catalog order: a name can be shared
+     * (e.g., "redis" is an Agent memory and an Embedding Store).
+     *
+     * @param beanName the bean name (e.g., "redis")
+     * @return the factory type keys, or an empty list if none found
+     */
+    public List<String> findFactoryTypeKeysForBeanName(String beanName) {
+        if (beanName == null) {
+            return List.of();
+        }
+        return List.copyOf(beanNameToFactoryKeys.getOrDefault(beanName.toLowerCase(), Set.of()));
+    }
+
+    /**
+     * Finds all factories declaring a config entry, directly or by one of their beans, in catalog order.
+     *
+     * @param configEntryName the config entry name (e.g., "forage.redis.host")
+     * @return the factory type keys, or an empty list if none found
+     */
+    public List<String> findFactoryTypeKeysForConfigEntry(String configEntryName) {
+        return List.copyOf(configEntryToFactoryKeys.getOrDefault(configEntryName, Set.of()));
+    }
+
+    /**
      * Finds the bean name (kind) for a given property prefix.
      * Property prefixes are extracted from bean configEntries (e.g., "google" from "forage.google.api.key").
      *
@@ -494,6 +532,28 @@ public final class ForageCatalogReader {
             return Optional.empty();
         }
         return Optional.ofNullable(beanNameToFeature.get(beanName.toLowerCase()));
+    }
+
+    /**
+     * Gets the feature category of a bean within one factory, as a bean name can be shared
+     * (e.g., "redis" is "Memory" in the Agent and "Embedding Store" in the Embedding Store factory).
+     *
+     * @param factoryTypeKey the factory type key (e.g., "vectordb")
+     * @param beanName the bean name (e.g., "redis")
+     * @return Optional containing the feature category if found
+     */
+    public Optional<String> getBeanFeature(String factoryTypeKey, String beanName) {
+        if (beanName == null) {
+            return Optional.empty();
+        }
+        return findFactoryByTypeKey(factoryTypeKey == null ? "" : factoryTypeKey).stream()
+                .map(ForageFactory::getBeansByFeature)
+                .filter(beansByFeature -> beansByFeature != null)
+                .flatMap(List::stream)
+                .filter(featureBeans -> featureBeans.getBeans() != null
+                        && featureBeans.getBeans().stream().anyMatch(bean -> beanName.equalsIgnoreCase(bean.getName())))
+                .map(FeatureBeans::getFeature)
+                .findFirst();
     }
 
     /**

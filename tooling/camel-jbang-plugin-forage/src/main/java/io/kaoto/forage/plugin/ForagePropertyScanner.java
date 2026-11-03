@@ -7,8 +7,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
@@ -85,36 +87,36 @@ public final class ForagePropertyScanner {
         // Load application properties with profile override semantics (like Camel does):
         // scan base first, then profile file — profile occurrences replace base ones per property key
         File applicationPropsFile = loadApplicationProperties(directory);
-        Properties baseProps = null;
-        if (applicationPropsFile != null) {
-            baseProps = new Properties();
-            try (FileInputStream fis = new FileInputStream(applicationPropsFile)) {
-                baseProps.load(fis);
-            }
-            collectForageProperties(baseProps, applicationPropsFile, catalog, trackUnknown, result);
-        }
+        Properties baseProps = applicationPropsFile != null ? load(applicationPropsFile) : null;
 
         String profile = resolveProfile(baseProps);
-        if (profile != null) {
-            File profileFile = new File(directory, "application-" + profile + ".properties");
-            if (profileFile.isFile()) {
-                Properties profileProps = new Properties();
-                try (FileInputStream fis = new FileInputStream(profileFile)) {
-                    profileProps.load(fis);
-                }
-                // Profile properties override base: replace matching occurrences
-                overrideForageProperties(profileProps, profileFile, catalog, trackUnknown, result);
-            }
-        }
+        File profileFile = profile != null ? new File(directory, "application-" + profile + ".properties") : null;
+        Properties profileProps = profileFile != null && profileFile.isFile() ? load(profileFile) : null;
 
         // Load forage-specific and catalog-named properties files independently
-        List<File> nonAppFiles = findNonApplicationPropertiesFiles(directory, catalog);
-        for (File file : nonAppFiles) {
-            Properties props = new Properties();
-            try (FileInputStream fis = new FileInputStream(file)) {
-                props.load(fis);
-            }
-            collectForageProperties(props, file, catalog, trackUnknown, result);
+        Map<File, Properties> nonAppProps = new LinkedHashMap<>();
+        for (File file : findNonApplicationPropertiesFiles(directory, catalog)) {
+            nonAppProps.put(file, load(file));
+        }
+
+        // The kinds selected in the project decide which factory owns the keys of a shared bean name
+        Map<String, String> allProps = new HashMap<>();
+        for (Properties props : Stream.concat(Stream.of(baseProps, profileProps), nonAppProps.values().stream())
+                .filter(Objects::nonNull)
+                .toList()) {
+            props.stringPropertyNames().forEach(key -> allProps.put(key, props.getProperty(key)));
+        }
+        SharedBeans shared = new SharedBeans(catalog, allProps);
+
+        if (baseProps != null) {
+            collectForageProperties(baseProps, applicationPropsFile, catalog, shared, trackUnknown, result);
+        }
+        if (profileProps != null) {
+            // Profile properties override base: replace matching occurrences
+            overrideForageProperties(profileProps, profileFile, catalog, shared, trackUnknown, result);
+        }
+        for (Map.Entry<File, Properties> file : nonAppProps.entrySet()) {
+            collectForageProperties(file.getValue(), file.getKey(), catalog, shared, trackUnknown, result);
         }
 
         return result;
@@ -134,10 +136,19 @@ public final class ForagePropertyScanner {
         return scanPropertiesWithFileTracking(directory, catalog, true);
     }
 
+    private static Properties load(File file) throws IOException {
+        Properties props = new Properties();
+        try (FileInputStream fis = new FileInputStream(file)) {
+            props.load(fis);
+        }
+        return props;
+    }
+
     private static void collectForageProperties(
             Properties props,
             File sourceFile,
             ForageCatalogReader catalog,
+            SharedBeans shared,
             boolean trackUnknown,
             Map<String, Map<String, List<PropertyOccurrence>>> result) {
 
@@ -148,7 +159,7 @@ public final class ForagePropertyScanner {
             }
 
             String remainder = matcher.group(1);
-            ParseResult parsed = parsePropertyKey(remainder, catalog);
+            ParseResult parsed = parsePropertyKey(remainder, catalog, shared);
 
             String value = props.getProperty(key);
             PropertyOccurrence occurrence = new PropertyOccurrence(sourceFile, key, value);
@@ -172,6 +183,7 @@ public final class ForagePropertyScanner {
             Properties profileProps,
             File profileFile,
             ForageCatalogReader catalog,
+            SharedBeans shared,
             boolean trackUnknown,
             Map<String, Map<String, List<PropertyOccurrence>>> result) {
 
@@ -182,7 +194,7 @@ public final class ForagePropertyScanner {
             }
 
             String remainder = matcher.group(1);
-            ParseResult parsed = parsePropertyKey(remainder, catalog);
+            ParseResult parsed = parsePropertyKey(remainder, catalog, shared);
 
             String value = profileProps.getProperty(key);
             PropertyOccurrence occurrence = new PropertyOccurrence(profileFile, key, value);
@@ -264,7 +276,10 @@ public final class ForagePropertyScanner {
         }
     }
 
-    private static ParseResult parsePropertyKey(String key, ForageCatalogReader catalog) {
+    /**
+     * @param shared picks the factory of a bean name listed by several factories; {@code null} takes the first
+     */
+    static ParseResult parsePropertyKey(String key, ForageCatalogReader catalog, SharedBeans shared) {
         String[] parts = key.split("\\.", 2);
         if (parts.length < 2) {
             return null;
@@ -273,13 +288,19 @@ public final class ForagePropertyScanner {
         String firstPart = parts[0];
         String restOfKey = parts[1];
 
-        // Check if the first part is a known factory type key
+        // Check if the first part is a known factory type key, unless it names an instance of
+        // another factory (e.g. forage.embeddings.jdbc.url)
         if (catalog.getFactoryMetadata(firstPart).isPresent()) {
+            String[] restParts = restOfKey.split("\\.", 2);
+            if (restParts.length == 2
+                    && catalog.getFactoryMetadata(restParts[0]).isPresent()) {
+                return new ParseResult(restParts[0], restParts[1]);
+            }
             return new ParseResult(firstPart, restOfKey);
         }
 
         // Check if the first part is a known bean type
-        Optional<String> beanFactory = catalog.findFactoryTypeKeyForBeanName(firstPart);
+        Optional<String> beanFactory = factoryForBean(firstPart, key, catalog, shared);
         if (beanFactory.isPresent()) {
             return new ParseResult(beanFactory.get(), key);
         }
@@ -294,7 +315,7 @@ public final class ForagePropertyScanner {
                 return new ParseResult(secondPart, propertyName);
             }
 
-            Optional<String> beanFactory2 = catalog.findFactoryTypeKeyForBeanName(secondPart);
+            Optional<String> beanFactory2 = factoryForBean(secondPart, restOfKey, catalog, shared);
             if (beanFactory2.isPresent()) {
                 return new ParseResult(beanFactory2.get(), restOfKey);
             }
@@ -305,5 +326,12 @@ public final class ForagePropertyScanner {
         return factoryType.map(s -> new ParseResult(s, key)).orElse(null);
     }
 
-    private record ParseResult(String factoryTypeKey, String propertyName) {}
+    private static Optional<String> factoryForBean(
+            String beanName, String beanKey, ForageCatalogReader catalog, SharedBeans shared) {
+        return shared != null
+                ? shared.factoryForBeanKey(beanName, beanKey)
+                : catalog.findFactoryTypeKeyForBeanName(beanName);
+    }
+
+    record ParseResult(String factoryTypeKey, String propertyName) {}
 }
