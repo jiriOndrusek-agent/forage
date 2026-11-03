@@ -1,4 +1,4 @@
-package io.kaoto.forage.models.embeddings;
+package io.kaoto.forage.models.embeddings.common;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

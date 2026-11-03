@@ -61,6 +61,7 @@
         <module>forage-vectordb-qdrant</module>
         <module>forage-vectordb-redis</module>
         <module>forage-vectordb-weaviate</module>
+        <module>forage-embedding-store-common</module>
         <module>forage-embedding-store</module>
         <module>spring-boot</module>
         <module>camel-quarkus</module>

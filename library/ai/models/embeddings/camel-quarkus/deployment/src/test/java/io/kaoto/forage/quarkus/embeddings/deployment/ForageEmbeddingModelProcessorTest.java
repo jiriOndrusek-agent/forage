@@ -3,12 +3,12 @@ package io.kaoto.forage.quarkus.embeddings.deployment;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.ServiceLoader;
 import org.apache.camel.quarkus.core.deployment.spi.CamelRuntimeBeanBuildItem;
+import io.kaoto.forage.core.common.BeanFactory;
 import io.kaoto.forage.core.util.config.ConfigStore;
 import io.kaoto.forage.quarkus.embeddings.ForageEmbeddingModelConfigSourceFactory;
 import io.kaoto.forage.quarkus.embeddings.ForageEmbeddingModelRecorder;
-import io.quarkus.deployment.builditem.RemovedResourceBuildItem;
-import io.quarkus.maven.dependency.ArtifactKey;
 import io.quarkus.runtime.RuntimeValue;
 import io.smallrye.config.ConfigSourceContext;
 import io.smallrye.config.ConfigValue;
@@ -59,11 +59,11 @@ class ForageEmbeddingModelProcessorTest {
     }
 
     @Test
-    void removesThePlainCamelFactory() {
-        RemovedResourceBuildItem removed = new ForageEmbeddingModelProcessor().removePlainCamelFactory();
-        assertThat(removed.getArtifact())
-                .isEqualTo(ArtifactKey.of("io.kaoto.forage", "forage-embedding-model", "", "jar"));
-        assertThat(removed.getResources()).containsExactly("META-INF/services/io.kaoto.forage.core.common.BeanFactory");
+    void doesNotBringThePlainCamelFactory() {
+        // It would bind the beans a second time when Camel Quarkus builds the CamelContext
+        assertThat(ServiceLoader.load(BeanFactory.class).stream()
+                        .map(provider -> provider.type().getName()))
+                .doesNotContain("io.kaoto.forage.models.embeddings.EmbeddingModelBeanFactory");
     }
 
     @Test

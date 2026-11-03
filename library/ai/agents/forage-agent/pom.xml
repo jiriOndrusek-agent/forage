@@ -47,13 +47,13 @@
 
         <dependency>
             <groupId>io.kaoto.forage</groupId>
-            <artifactId>forage-embedding-model</artifactId>
+            <artifactId>forage-embedding-model-common</artifactId>
             <version>${project.version}</version>
         </dependency>
 
         <dependency>
             <groupId>io.kaoto.forage</groupId>
-            <artifactId>forage-embedding-store</artifactId>
+            <artifactId>forage-embedding-store-common</artifactId>
             <version>${project.version}</version>
         </dependency>
 
@@ -127,6 +127,14 @@
         <dependency>
             <groupId>io.kaoto.forage</groupId>
             <artifactId>forage-model-watsonx-ai</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- AgentBeanFactoriesTest: the embedding beans of an ollama agent app -->
+        <dependency>
+            <groupId>io.kaoto.forage</groupId>
+            <artifactId>forage-model-embeddings-ollama</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>

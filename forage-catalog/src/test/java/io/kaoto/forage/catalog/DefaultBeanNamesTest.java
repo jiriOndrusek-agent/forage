@@ -20,14 +20,14 @@ import io.kaoto.forage.jms.common.JmsModuleDescriptor;
 import io.kaoto.forage.messaging.spring.rabbitmq.SpringRabbitMQBeanFactory;
 import io.kaoto.forage.messaging.spring.rabbitmq.common.SpringRabbitMQConstants;
 import io.kaoto.forage.models.embeddings.EmbeddingModelBeanFactory;
-import io.kaoto.forage.models.embeddings.EmbeddingModelModuleDescriptor;
+import io.kaoto.forage.models.embeddings.common.EmbeddingModelModuleDescriptor;
 import io.kaoto.forage.security.keycloak.KeycloakSecurityPolicyProvider;
 import io.kaoto.forage.security.shiro.ShiroSecurityPolicyProvider;
 import io.kaoto.forage.security.spring.SpringSecurityPolicyProvider;
 import io.kaoto.forage.security.tls.TlsBeanFactory;
 import io.kaoto.forage.security.tls.TlsModuleDescriptor;
 import io.kaoto.forage.vectordb.store.EmbeddingStoreBeanFactory;
-import io.kaoto.forage.vectordb.store.EmbeddingStoreModuleDescriptor;
+import io.kaoto.forage.vectordb.store.common.EmbeddingStoreModuleDescriptor;
 import io.kaoto.forage.websearch.WebSearchBeanFactory;
 
 import org.junit.jupiter.params.ParameterizedTest;

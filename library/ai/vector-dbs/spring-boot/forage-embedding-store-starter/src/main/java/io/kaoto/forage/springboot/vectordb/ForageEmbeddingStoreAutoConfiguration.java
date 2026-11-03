@@ -11,9 +11,9 @@ import io.kaoto.forage.core.annotations.FactoryType;
 import io.kaoto.forage.core.annotations.FactoryVariant;
 import io.kaoto.forage.core.annotations.ForageFactory;
 import io.kaoto.forage.core.common.AbstractInstanceBeanFactory;
-import io.kaoto.forage.vectordb.store.EmbeddingStoreCreator;
-import io.kaoto.forage.vectordb.store.EmbeddingStoreFactoryConfig;
-import io.kaoto.forage.vectordb.store.EmbeddingStoreModuleDescriptor;
+import io.kaoto.forage.vectordb.store.common.EmbeddingStoreCreator;
+import io.kaoto.forage.vectordb.store.common.EmbeddingStoreFactoryConfig;
+import io.kaoto.forage.vectordb.store.common.EmbeddingStoreModuleDescriptor;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 
 /**

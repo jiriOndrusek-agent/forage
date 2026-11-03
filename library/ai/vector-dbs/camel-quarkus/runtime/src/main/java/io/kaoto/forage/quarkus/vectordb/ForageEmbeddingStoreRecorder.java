@@ -1,6 +1,6 @@
 package io.kaoto.forage.quarkus.vectordb;
 
-import io.kaoto.forage.vectordb.store.EmbeddingStoreCreator;
+import io.kaoto.forage.vectordb.store.common.EmbeddingStoreCreator;
 import io.quarkus.runtime.RuntimeValue;
 import io.quarkus.runtime.annotations.Recorder;
 import dev.langchain4j.data.segment.TextSegment;

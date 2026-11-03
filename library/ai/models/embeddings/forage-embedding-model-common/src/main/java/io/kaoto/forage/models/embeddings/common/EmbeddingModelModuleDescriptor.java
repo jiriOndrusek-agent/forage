@@ -1,4 +1,4 @@
-package io.kaoto.forage.models.embeddings;
+package io.kaoto.forage.models.embeddings.common;
 
 import java.util.ServiceLoader;
 import io.kaoto.forage.core.ai.EmbeddingModelProvider;

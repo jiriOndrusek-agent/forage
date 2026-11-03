@@ -16,7 +16,7 @@
         </dependency>
         <dependency>
             <groupId>io.kaoto.forage</groupId>
-            <artifactId>forage-embedding-store</artifactId>
+            <artifactId>forage-embedding-store-common</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>

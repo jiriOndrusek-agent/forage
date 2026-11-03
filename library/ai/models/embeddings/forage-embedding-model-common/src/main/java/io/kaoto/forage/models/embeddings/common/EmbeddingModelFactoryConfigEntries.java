@@ -1,4 +1,4 @@
-package io.kaoto.forage.models.embeddings;
+package io.kaoto.forage.models.embeddings.common;
 
 import io.kaoto.forage.core.util.config.ConfigEntries;
 import io.kaoto.forage.core.util.config.ConfigModule;
