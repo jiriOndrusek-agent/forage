@@ -6,6 +6,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import io.kaoto.forage.core.util.config.ConfigStore;
 import io.kaoto.forage.springboot.common.ForageEnvironmentPostProcessor;
 import io.kaoto.forage.springboot.common.SpringConfigResolver;
+import io.kaoto.forage.springboot.embeddings.ForageEmbeddingModelAutoConfiguration;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 
@@ -55,6 +56,20 @@ class ForageEmbeddingStoreAutoConfigurationTest {
         runner.withBean("embeddingStore", EmbeddingStore.class, () -> external)
                 .withPropertyValues("forage.vectordb.kind=in-memory-store")
                 .run(context -> assertThat(context.getBean("embeddingStore")).isSameAs(external));
+    }
+
+    @Test
+    void failsForModelAndStoreWithTheSameName() {
+        new ApplicationContextRunner()
+                .withInitializer(context -> new ForageEnvironmentPostProcessor()
+                        .postProcessEnvironment(context.getEnvironment(), new SpringApplication()))
+                .withConfiguration(AutoConfigurations.of(
+                        ForageEmbeddingModelAutoConfiguration.class, ForageEmbeddingStoreAutoConfiguration.class))
+                .withPropertyValues("forage.docs.embeddings.kind=ollama", "forage.docs.vectordb.kind=in-memory-store")
+                .run(context -> assertThat(context)
+                        .hasFailed()
+                        .getFailure()
+                        .hasMessageContaining("bean 'docs': the name is taken by a bean of type Embedding"));
     }
 
     @Test

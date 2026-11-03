@@ -2,6 +2,7 @@ package io.kaoto.forage.vectordb.store;
 
 import java.util.List;
 import java.util.ServiceLoader;
+import org.apache.camel.component.langchain4j.embeddingstore.LangChain4jEmbeddingStoreComponent;
 import org.apache.camel.impl.DefaultCamelContext;
 import io.kaoto.forage.core.common.BeanFactory;
 import io.kaoto.forage.core.util.config.ConfigStore;
@@ -90,6 +91,36 @@ class EmbeddingStoreBeanFactoryTest {
         assertThat(context.getRegistry().findByTypeWithName(EmbeddingStore.class))
                 .containsOnlyKeys("alpha", "beta");
         assertThat(TestEmbeddingStoreProvider.IDS).containsExactly("alpha");
+    }
+
+    @Test
+    void reloadGivesComponentsTheNewStore() {
+        System.setProperty("forage.vectordb.kind", "in-memory-store");
+        factory.configure();
+        LangChain4jEmbeddingStoreComponent component =
+                context.getComponent("langchain4j-embeddingstore", LangChain4jEmbeddingStoreComponent.class);
+        EmbeddingStore<TextSegment> first = component.getConfiguration().getEmbeddingStore();
+        assertThat(first).isSameAs(context.getRegistry().lookupByName("embeddingStore"));
+
+        // a dev mode reload: ForageContextServicePlugin.onReload()
+        factory.cleanup();
+        ConfigStore.getInstance().reload();
+        factory.configure();
+
+        assertThat(component.getConfiguration().getEmbeddingStore())
+                .isNotSameAs(first)
+                .isSameAs(context.getRegistry().lookupByName("embeddingStore"));
+    }
+
+    @Test
+    void failsForNameOfAnotherBeanType() {
+        context.getRegistry().bind("alpha", "a String bean");
+        System.setProperty("forage.alpha.vectordb.kind", "in-memory-store");
+
+        assertThatThrownBy(factory::configure)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Cannot register EmbeddingStore bean 'alpha': the name is taken by a bean of type String. "
+                        + "Give each bean its own name.");
     }
 
     @Test

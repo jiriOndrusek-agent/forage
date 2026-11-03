@@ -2,6 +2,8 @@ package io.kaoto.forage.models.embeddings;
 
 import java.util.List;
 import java.util.ServiceLoader;
+import org.apache.camel.component.langchain4j.embeddings.LangChain4jEmbeddingsComponent;
+import org.apache.camel.component.langchain4j.embeddings.LangChain4jEmbeddingsEndpoint;
 import org.apache.camel.impl.DefaultCamelContext;
 import io.kaoto.forage.core.common.BeanFactory;
 import io.kaoto.forage.core.util.config.ConfigStore;
@@ -134,6 +136,44 @@ class EmbeddingModelBeanFactoryTest {
         assertThat(context.getRegistry().lookupByName("beta"))
                 .isInstanceOf(OllamaEmbeddingModel.class)
                 .isNotSameAs(beta);
+    }
+
+    @Test
+    void reloadGivesComponentsTheNewModel() {
+        System.setProperty("forage.embeddings.kind", "ollama");
+        System.setProperty("forage.ollama.embedding.model.name", "first");
+        factory.configure();
+        LangChain4jEmbeddingsComponent component =
+                context.getComponent("langchain4j-embeddings", LangChain4jEmbeddingsComponent.class);
+        assertThat(modelName(component.getConfiguration().getEmbeddingModel())).isEqualTo("first");
+
+        // a dev mode reload: ForageContextServicePlugin.onReload()
+        System.setProperty("forage.ollama.embedding.model.name", "second");
+        factory.cleanup();
+        assertThat(component.getConfiguration().getEmbeddingModel()).isNull();
+        ConfigStore.getInstance().reload();
+        factory.configure();
+
+        assertThat(modelName(component.getConfiguration().getEmbeddingModel())).isEqualTo("second");
+        assertThat(context.getEndpoint("langchain4j-embeddings:embed", LangChain4jEmbeddingsEndpoint.class)
+                        .getConfiguration()
+                        .getEmbeddingModel())
+                .isSameAs(context.getRegistry().lookupByName("embeddingModel"));
+    }
+
+    @Test
+    void failsForNameOfAnotherBeanType() {
+        context.getRegistry().bind("alpha", "a String bean");
+        System.setProperty("forage.alpha.embeddings.kind", "ollama");
+
+        assertThatThrownBy(factory::configure)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Cannot register EmbeddingModel bean 'alpha': the name is taken by a bean of type String. "
+                        + "Give each bean its own name.");
+    }
+
+    private static String modelName(EmbeddingModel model) {
+        return ((OllamaEmbeddingModel) model).modelName();
     }
 
     @Test

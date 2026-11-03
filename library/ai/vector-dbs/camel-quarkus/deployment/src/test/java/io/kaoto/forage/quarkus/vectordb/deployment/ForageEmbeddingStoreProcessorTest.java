@@ -18,6 +18,7 @@ import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -59,6 +60,22 @@ class ForageEmbeddingStoreProcessorTest {
                         .build());
         new ForageEmbeddingStoreConfigSourceFactory().getConfigSources(sourceContext);
         verifyRegistration("docs", "docs");
+    }
+
+    @Test
+    void failsForNameOfAnotherBeanType() {
+        RuntimeValue<Object> value = new RuntimeValue<>(new Object());
+        List<CamelRuntimeBeanBuildItem> beans = List.of(
+                new CamelRuntimeBeanBuildItem("docs", EmbeddingStore.class.getName(), value),
+                new CamelRuntimeBeanBuildItem("notes", "dev.langchain4j.model.embedding.EmbeddingModel", value),
+                new CamelRuntimeBeanBuildItem("docs", "dev.langchain4j.model.embedding.EmbeddingModel", value));
+
+        assertThatThrownBy(() -> new ForageEmbeddingStoreProcessor().checkBeanNames(beans))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageStartingWith(
+                        "Cannot register EmbeddingStore bean 'docs': the name is taken by a bean of type ");
+        assertThat(new ForageEmbeddingStoreProcessor().checkBeanNames(beans.subList(0, 2)))
+                .isNotNull();
     }
 
     @Test
