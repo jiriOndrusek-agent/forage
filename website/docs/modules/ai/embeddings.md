@@ -10,13 +10,13 @@ Embedding models convert text into vector representations for similarity search 
 
 | Plain Camel / JBang | Spring Boot | Quarkus |
 |---|---|---|
-| `forage-embedding-model` | not yet | not yet |
+| `forage-embedding-model` | `forage-embedding-model-starter` | `forage-quarkus-embedding-model` |
 
 `forage.embeddings.kind` creates an `EmbeddingModel` bean named `embeddingModel`.
-`forage.<name>.embeddings.kind` creates a bean named `<name>`; its provider properties take the
-same prefix, e.g. `forage.<name>.ollama.embedding.model.name`. Put the keys in `application.properties`,
-or split them into `forage-embedding-model.properties` (kind) and `forage-embedding-model-ollama.properties`
-(provider).
+`forage.<name>.embeddings.kind` creates a bean named `<name>`; named beans replace the default one.
+Provider properties take the same prefix, e.g. `forage.<name>.ollama.embedding.model.name`. Put the keys
+in `application.properties`, or split them into `forage-embedding-model.properties` (kind) and
+`forage-embedding-model-ollama.properties` (provider).
 
 ```properties
 forage.embeddings.kind=ollama
@@ -35,6 +35,8 @@ beans, select one by name:
 ```
 
 {{ forage_properties("Embedding Model") }}
+
+To store the embeddings, see [Embedding Store Beans](vector-databases.md#embedding-store-beans).
 
 ## Agent Embeddings
 
