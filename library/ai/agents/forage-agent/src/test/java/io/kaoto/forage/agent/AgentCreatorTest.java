@@ -21,7 +21,13 @@ import io.kaoto.forage.models.chat.mistralai.MistralAiConfigEntries;
 import io.kaoto.forage.models.chat.ollama.OllamaConfigEntries;
 import io.kaoto.forage.models.chat.openai.OpenAIConfigEntries;
 import io.kaoto.forage.models.chat.watsonxai.WatsonxAiConfigEntries;
+import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.guardrail.InputGuardrail;
+import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.model.output.Response;
+import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
+import dev.langchain4j.store.embedding.EmbeddingStore;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -277,6 +283,61 @@ class AgentCreatorTest {
             assertThat(System.getProperty("forage.test.embed.embedding.model.base.url"))
                     .isNull();
             assertThat(System.getProperty("forage.test.embed.embedding.model.name"))
+                    .isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("createEmbeddingStore() — in-memory store of an agent")
+    class EmbeddingStoreTests {
+
+        private final ClassLoader classLoader = getClass().getClassLoader();
+
+        // Every text gets the same vector, enough to find the seeded segments
+        private final EmbeddingModel model = new EmbeddingModel() {
+            @Override
+            public Response<List<Embedding>> embedAll(List<TextSegment> segments) {
+                return Response.from(segments.stream()
+                        .map(segment -> Embedding.from(new float[] {1, 0}))
+                        .toList());
+            }
+        };
+
+        @AfterEach
+        void cleanup() {
+            System.clearProperty("forage.agent.embedding.store.kind");
+            System.clearProperty("forage.agent.in.memory.store.file.source");
+            ConfigStore.getInstance().reload();
+        }
+
+        @Test
+        @DisplayName("The seed file is embedded with the agent's embedding model")
+        void seedsInMemoryStore() {
+            System.setProperty("forage.agent.embedding.store.kind", "in-memory-store");
+            System.setProperty("forage.agent.in.memory.store.file.source", "agent-seed.txt");
+            ConfigStore.getInstance().reload();
+
+            EmbeddingStore<TextSegment> store = AgentCreator.createEmbeddingStore(
+                    new AgentConfig(), "ollama", AgentCreator.DEFAULT_AGENT, classLoader, model);
+
+            assertThat(store.search(EmbeddingSearchRequest.builder()
+                                    .queryEmbedding(Embedding.from(new float[] {1, 0}))
+                                    .build())
+                            .matches())
+                    .isNotEmpty()
+                    .allSatisfy(match -> assertThat(match.embedded().text()).contains("Forage"));
+            // bridged properties are restored (cleared) once creation completes
+            assertThat(System.getProperty("forage.in.memory.store.file.source")).isNull();
+        }
+
+        @Test
+        @DisplayName("Without a seed file the agent gets no in-memory store")
+        void noInMemoryStoreWithoutSeed() {
+            System.setProperty("forage.agent.embedding.store.kind", "in-memory-store");
+            ConfigStore.getInstance().reload();
+
+            assertThat(AgentCreator.createEmbeddingStore(
+                            new AgentConfig(), "ollama", AgentCreator.DEFAULT_AGENT, classLoader, model))
                     .isNull();
         }
     }
