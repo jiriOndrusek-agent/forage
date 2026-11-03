@@ -22,6 +22,7 @@ import io.kaoto.forage.catalog.model.ConditionalBeanGroup;
 import io.kaoto.forage.catalog.model.ConditionalBeanInfo;
 import io.kaoto.forage.catalog.model.ConfigEntry;
 import io.kaoto.forage.catalog.reader.ForageCatalogReader;
+import io.kaoto.forage.plugin.SharedBeans;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import picocli.CommandLine;
@@ -63,6 +64,7 @@ public class ConfigReadCommand extends CamelCommand {
     private String strategy;
 
     private ForageCatalogReader catalog;
+    private SharedBeans shared;
 
     public ConfigReadCommand(CamelJBangMain main) {
         super(main);
@@ -97,10 +99,23 @@ public class ConfigReadCommand extends CamelCommand {
                 return outputResult(List.of(), "No Forage properties files found");
             }
 
+            // The kinds selected in all files decide which factory owns the keys of a shared bean name
+            Map<File, Properties> filesProperties = new LinkedHashMap<>();
+            Map<String, String> allProperties = new LinkedHashMap<>();
+            for (File file : propertiesFiles) {
+                Properties props = new Properties();
+                try (FileInputStream fis = new FileInputStream(file)) {
+                    props.load(fis);
+                }
+                filesProperties.put(file, props);
+                props.stringPropertyNames().forEach(key -> allProperties.put(key, props.getProperty(key)));
+            }
+            shared = new SharedBeans(catalog, allProperties);
+
             // Parse all properties files and detect beans
             List<BeanInfo> beans = new ArrayList<>();
-            for (File file : propertiesFiles) {
-                List<BeanInfo> fileBeans = parsePropertiesFile(file);
+            for (Map.Entry<File, Properties> file : filesProperties.entrySet()) {
+                List<BeanInfo> fileBeans = parsePropertiesFile(file.getKey(), file.getValue());
                 beans.addAll(fileBeans);
             }
 
@@ -164,12 +179,7 @@ public class ConfigReadCommand extends CamelCommand {
         return targetFileNames;
     }
 
-    private List<BeanInfo> parsePropertiesFile(File file) throws IOException {
-        Properties props = new Properties();
-        try (FileInputStream fis = new FileInputStream(file)) {
-            props.load(fis);
-        }
-
+    private List<BeanInfo> parsePropertiesFile(File file, Properties props) {
         // Group properties by factory type and instance name
         Map<String, InstanceProperties> instances = new LinkedHashMap<>();
 
@@ -196,6 +206,21 @@ public class ConfigReadCommand extends CamelCommand {
             }
             instance.properties.put(parsed.propertyName, props.getProperty(key));
         }
+
+        // The keys of the bean that an instance selects by kind belong to that instance
+        // (e.g. forage.vectordb.kind=redis with forage.redis.host)
+        instances.values().removeIf(instance -> {
+            if (instance.beanType == null) {
+                return false;
+            }
+            InstanceProperties selecting = instances.get(
+                    buildInstanceKey(new ParsedProperty(instance.factoryType, instance.instanceName, null, null)));
+            if (selecting == null || selecting == instance || !instance.beanType.equals(determineBeanKind(selecting))) {
+                return false;
+            }
+            instance.properties.forEach(selecting.properties::putIfAbsent);
+            return true;
+        });
 
         // Convert instances to BeanInfo
         List<BeanInfo> beans = new ArrayList<>();
@@ -245,7 +270,7 @@ public class ConfigReadCommand extends CamelCommand {
         }
 
         // Check if the first part is a known bean type (e.g., ollama, infinispan)
-        Optional<String> beanFactoryOpt = catalog.findFactoryTypeKeyForBeanName(firstPart);
+        Optional<String> beanFactoryOpt = shared.factoryForBeanKey(firstPart, key);
         if (beanFactoryOpt.isPresent()) {
             // e.g., "ollama.model.name" -> factoryType=multi, beanType=ollama, propertyName=model.name
             return new ParsedProperty(beanFactoryOpt.get(), null, firstPart, restOfKey);
@@ -264,7 +289,7 @@ public class ConfigReadCommand extends CamelCommand {
             }
 
             // Check if second part is a known bean type (e.g., "test.ollama.model.name")
-            Optional<String> beanFactoryOpt2 = catalog.findFactoryTypeKeyForBeanName(secondPart);
+            Optional<String> beanFactoryOpt2 = shared.factoryForBeanKey(secondPart, restOfKey);
             if (beanFactoryOpt2.isPresent()) {
                 return new ParsedProperty(beanFactoryOpt2.get(), firstPart, secondPart, propertyName);
             }
@@ -290,7 +315,11 @@ public class ConfigReadCommand extends CamelCommand {
             Optional<ForageCatalogReader.ConfigEntryOwner> owner =
                     catalog.findConfigEntryOwner(FORAGE_PROPERTIES_PREFIX + entryKey);
             if (owner.isPresent()) {
-                return toParsedProperty(instanceName, entryKey, owner.get());
+                String beanName = owner.get().beanName();
+                String factoryTypeKey = shared.factoryForConfigEntry(FORAGE_PROPERTIES_PREFIX + entryKey, beanName)
+                        .orElse(owner.get().factoryTypeKey());
+                return toParsedProperty(
+                        instanceName, entryKey, new ForageCatalogReader.ConfigEntryOwner(factoryTypeKey, beanName));
             }
             int dot = entryKey.indexOf('.');
             if (dot < 0) {
@@ -441,7 +470,8 @@ public class ConfigReadCommand extends CamelCommand {
     private String getFactoryJavaType(ForageCatalogReader.FactoryMetadata metadata, InstanceProperties instance) {
         // For beans with a specific bean type, look up the feature to determine the Java type
         if (instance.beanType != null) {
-            Optional<String> featureOpt = catalog.getBeanFeature(instance.beanType);
+            Optional<String> featureOpt = catalog.getBeanFeature(instance.factoryType, instance.beanType)
+                    .or(() -> catalog.getBeanFeature(instance.beanType));
             if (featureOpt.isPresent()) {
                 String feature = featureOpt.get();
                 // The feature key in beansByFeature indicates the Java type
@@ -471,6 +501,8 @@ public class ConfigReadCommand extends CamelCommand {
         return switch (feature) {
             case "Chat Model" -> "dev.langchain4j.model.chat.ChatModel";
             case "Memory" -> "dev.langchain4j.memory.ChatMemory";
+            case "Embeddings Model" -> "dev.langchain4j.model.embedding.EmbeddingModel";
+            case "Embedding Store" -> "dev.langchain4j.store.embedding.EmbeddingStore";
             case "javax.sql.DataSource" -> "javax.sql.DataSource";
             case "jakarta.jms.ConnectionFactory" -> "jakarta.jms.ConnectionFactory";
             default -> feature;

@@ -159,7 +159,8 @@ class ForageCatalogReaderTest {
                       "configEntries": [ { "name": "forage.vectordb.kind", "type": "bean-name" } ],
                       "beansByFeature": [ { "feature": "Embedding Store", "beans": [ {
                         "name": "mariadb",
-                        "gav": "io.kaoto.forage:forage-vectordb-mariadb:1.0"
+                        "gav": "io.kaoto.forage:forage-vectordb-mariadb:1.0",
+                        "configEntries": [ { "name": "forage.mariadb.table", "type": "string" } ]
                       } ] } ]
                     }
                   ]
@@ -171,6 +172,16 @@ class ForageCatalogReaderTest {
         // The first factory listing the name owns it
         assertThat(shared.findFactoryTypeKeyForBeanName("mariadb")).hasValue("jdbc");
         assertThat(shared.getBeanFeature("mariadb")).hasValue("javax.sql.DataSource");
+
+        // All of them, and the feature and keys of each
+        assertThat(shared.findFactoryTypeKeysForBeanName("MariaDB")).containsExactly("jdbc", "vectordb");
+        assertThat(shared.getBeanFeature("vectordb", "mariadb")).hasValue("Embedding Store");
+        assertThat(shared.getBeanFeature("jdbc", "mariadb")).hasValue("javax.sql.DataSource");
+        assertThat(shared.findFactoryTypeKeysForConfigEntry("forage.mariadb.table"))
+                .containsExactly("vectordb");
+        assertThat(shared.findFactoryTypeKeysForConfigEntry("forage.jdbc.db.kind"))
+                .containsExactly("jdbc");
+        assertThat(shared.findFactoryTypeKeysForConfigEntry("forage.unknown")).isEmpty();
 
         assertThat(shared.getBeanGavs("mariadb"))
                 .containsExactlyInAnyOrder(

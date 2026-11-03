@@ -136,6 +136,20 @@ class ForagePropertyScannerTest {
     }
 
     @Test
+    void instancesNamedLikeAFactory() throws Exception {
+        writeFile(
+                "application.properties",
+                "forage.embeddings.jdbc.db.kind=postgresql\n"
+                        + "forage.vectordb.jdbc.url=jdbc:postgresql://localhost/vectors\n");
+
+        Map<String, Map<String, List<String>>> result = ForagePropertyScanner.scanProperties(tempDir, catalog);
+
+        assertThat(result).containsOnlyKeys("jdbc");
+        assertThat(result.get("jdbc").get("db.kind")).containsExactly("postgresql");
+        assertThat(result.get("jdbc").get("url")).containsExactly("jdbc:postgresql://localhost/vectors");
+    }
+
+    @Test
     void noPropertiesFiles() throws Exception {
         Map<String, Map<String, List<String>>> result = ForagePropertyScanner.scanProperties(tempDir, catalog);
 
