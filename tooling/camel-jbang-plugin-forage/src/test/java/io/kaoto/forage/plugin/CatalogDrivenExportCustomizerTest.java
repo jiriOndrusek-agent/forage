@@ -429,4 +429,31 @@ class CatalogDrivenExportCustomizerTest {
         // The Agent factory also lists an "ollama" bean (the chat model)
         assertThat(deps).noneMatch(d -> d.contains("forage-model-ollama:"));
     }
+
+    @Test
+    void testEmbeddingStorePgvector_allRuntimes() throws Exception {
+        CatalogDrivenExportCustomizer customizer =
+                createCustomizer("forage.vectordb.kind=pgvector\nforage.pgvector.host=localhost\n");
+
+        assertThat(customizer.resolveRuntimeDependencies(RuntimeType.MAIN))
+                .anyMatch(d -> d.contains("forage-embedding-store:"))
+                .anyMatch(d -> d.contains("forage-vectordb-pgvector:"));
+        assertThat(customizer.resolveRuntimeDependencies(RuntimeType.SPRING_BOOT))
+                .anyMatch(d -> d.contains("forage-embedding-store-starter:"));
+        assertThat(customizer.resolveRuntimeDependencies(RuntimeType.QUARKUS))
+                .anyMatch(d -> d.contains("forage-quarkus-embedding-store-deployment:"));
+    }
+
+    @Test
+    void testBeanNamesSharedWithTheEmbeddingStore() throws Exception {
+        // redis and mariadb are also embedding store beans; existing factories keep their jars only
+        CatalogDrivenExportCustomizer customizer = createCustomizer(
+                "forage.agent.model.kind=ollama\nforage.agent.memory.kind=redis\nforage.redis.host=localhost\n"
+                        + "forage.jdbc.db.kind=mariadb\n");
+
+        Set<String> deps = customizer.resolveRuntimeDependencies(RuntimeType.QUARKUS);
+        assertThat(deps).anyMatch(d -> d.contains("forage-memory-redis:"));
+        assertThat(deps).anyMatch(d -> d.contains("forage-jdbc-mariadb:"));
+        assertThat(deps).noneMatch(d -> d.contains("forage-vectordb-") || d.contains("forage-embedding-store"));
+    }
 }

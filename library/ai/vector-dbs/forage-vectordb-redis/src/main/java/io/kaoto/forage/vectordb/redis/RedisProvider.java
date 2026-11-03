@@ -48,6 +48,7 @@ import redis.clients.jedis.UnifiedJedis;
 @ForageBean(
         value = "redis",
         components = {"camel-langchain4j-embeddingstore"},
+        feature = "Embedding Store",
         description = "Redis with vector search support")
 public class RedisProvider implements EmbeddingStoreProvider {
     private static final Logger LOG = LoggerFactory.getLogger(RedisProvider.class);

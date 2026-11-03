@@ -46,6 +46,7 @@ import dev.langchain4j.store.embedding.pinecone.PineconeServerlessIndexConfig;
 @ForageBean(
         value = "pinecone",
         components = {"camel-langchain4j-embeddingstore"},
+        feature = "Embedding Store",
         description = "Pinecone managed vector database service")
 public class PineconeProvider implements EmbeddingStoreProvider {
     private static final Logger LOG = LoggerFactory.getLogger(PineconeProvider.class);

@@ -26,6 +26,8 @@ import io.kaoto.forage.security.shiro.ShiroSecurityPolicyProvider;
 import io.kaoto.forage.security.spring.SpringSecurityPolicyProvider;
 import io.kaoto.forage.security.tls.TlsBeanFactory;
 import io.kaoto.forage.security.tls.TlsModuleDescriptor;
+import io.kaoto.forage.vectordb.store.EmbeddingStoreBeanFactory;
+import io.kaoto.forage.vectordb.store.EmbeddingStoreModuleDescriptor;
 import io.kaoto.forage.websearch.WebSearchBeanFactory;
 
 import org.junit.jupiter.params.ParameterizedTest;
@@ -47,6 +49,8 @@ class DefaultBeanNamesTest {
                         ConnectionFactoryBeanFactory.class, supply(() -> new JmsModuleDescriptor().defaultBeanName())),
                 Arguments.of(AgentBeanFactory.class, supply(() -> new AgentModuleDescriptor().defaultBeanName())),
                 Arguments.of(EmbeddingModelBeanFactory.class, supply(() -> new EmbeddingModelModuleDescriptor()
+                        .defaultBeanName())),
+                Arguments.of(EmbeddingStoreBeanFactory.class, supply(() -> new EmbeddingStoreModuleDescriptor()
                         .defaultBeanName())),
                 Arguments.of(CxfBeanFactory.class, supply(() -> new CxfModuleDescriptor().defaultBeanName())),
                 Arguments.of(InfluxDBBeanFactory.class, supply(() -> new InfluxDBModuleDescriptor().defaultBeanName())),

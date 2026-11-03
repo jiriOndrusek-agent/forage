@@ -51,6 +51,7 @@ import dev.langchain4j.store.embedding.pgvector.PgVectorEmbeddingStore;
 @ForageBean(
         value = "pgvector",
         components = {"camel-langchain4j-embeddingstore"},
+        feature = "Embedding Store",
         description = "PostgreSQL with pgvector extension")
 public class PgVectorProvider implements EmbeddingStoreProvider {
     private static final Logger LOG = LoggerFactory.getLogger(PgVectorProvider.class);

@@ -45,6 +45,7 @@ import dev.langchain4j.store.embedding.chroma.ChromaEmbeddingStore;
 @ForageBean(
         value = "chroma",
         components = {"camel-langchain4j-embeddingstore"},
+        feature = "Embedding Store",
         description = "Chroma embedding database")
 public class ChromaProvider implements EmbeddingStoreProvider {
     private static final Logger LOG = LoggerFactory.getLogger(ChromaProvider.class);
