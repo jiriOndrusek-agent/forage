@@ -5,6 +5,8 @@ import java.util.ServiceLoader;
 import org.apache.camel.impl.DefaultCamelContext;
 import io.kaoto.forage.core.common.BeanFactory;
 import io.kaoto.forage.core.util.config.ConfigStore;
+import io.kaoto.forage.models.embeddings.common.EmbeddingModelFactoryConfig;
+import io.kaoto.forage.models.embeddings.common.EmbeddingModelModuleDescriptor;
 import io.kaoto.forage.models.embeddings.ollama.OllamaEmbeddingProvider;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.ollama.OllamaEmbeddingModel;

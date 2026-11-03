@@ -1,6 +1,6 @@
 package io.kaoto.forage.quarkus.embeddings;
 
-import io.kaoto.forage.models.embeddings.EmbeddingModelCreator;
+import io.kaoto.forage.models.embeddings.common.EmbeddingModelCreator;
 import io.quarkus.runtime.RuntimeValue;
 import io.quarkus.runtime.annotations.Recorder;
 import dev.langchain4j.model.embedding.EmbeddingModel;

@@ -1,9 +1,9 @@
-package io.kaoto.forage.models.embeddings;
+package io.kaoto.forage.models.embeddings.common;
 
 import io.kaoto.forage.core.util.config.AbstractConfig;
 import io.kaoto.forage.core.util.config.MissingConfigException;
 
-import static io.kaoto.forage.models.embeddings.EmbeddingModelFactoryConfigEntries.KIND;
+import static io.kaoto.forage.models.embeddings.common.EmbeddingModelFactoryConfigEntries.KIND;
 
 public class EmbeddingModelFactoryConfig extends AbstractConfig {
     public EmbeddingModelFactoryConfig() {

@@ -3,6 +3,9 @@ package io.kaoto.forage.vectordb.store;
 import io.kaoto.forage.core.annotations.FactoryType;
 import io.kaoto.forage.core.annotations.ForageFactory;
 import io.kaoto.forage.core.common.AbstractInstanceBeanFactory;
+import io.kaoto.forage.vectordb.store.common.EmbeddingStoreCreator;
+import io.kaoto.forage.vectordb.store.common.EmbeddingStoreFactoryConfig;
+import io.kaoto.forage.vectordb.store.common.EmbeddingStoreModuleDescriptor;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 

@@ -6,6 +6,8 @@ import org.apache.camel.impl.DefaultCamelContext;
 import io.kaoto.forage.core.common.BeanFactory;
 import io.kaoto.forage.core.util.config.ConfigStore;
 import io.kaoto.forage.core.util.config.MissingConfigException;
+import io.kaoto.forage.vectordb.store.common.EmbeddingStoreFactoryConfig;
+import io.kaoto.forage.vectordb.store.common.EmbeddingStoreModuleDescriptor;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;

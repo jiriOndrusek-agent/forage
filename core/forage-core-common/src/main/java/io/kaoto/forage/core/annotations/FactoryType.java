@@ -16,10 +16,10 @@ public enum FactoryType {
     AGENT("org.apache.camel.component.langchain4j.agent.api.Agent", "forage-agent-factories"),
 
     /** Factory that creates EmbeddingModel beans */
-    EMBEDDING_MODEL("dev.langchain4j.model.embedding.EmbeddingModel", "forage-embedding-model"),
+    EMBEDDING_MODEL("dev.langchain4j.model.embedding.EmbeddingModel", "forage-embedding-model-common"),
 
     /** Factory that creates EmbeddingStore beans */
-    EMBEDDING_STORE("dev.langchain4j.store.embedding.EmbeddingStore", "forage-embedding-store"),
+    EMBEDDING_STORE("dev.langchain4j.store.embedding.EmbeddingStore", "forage-embedding-store-common"),
 
     /** Factory that creates DataSource beans for JDBC */
     DATA_SOURCE("javax.sql.DataSource", "forage-jdbc-common"),

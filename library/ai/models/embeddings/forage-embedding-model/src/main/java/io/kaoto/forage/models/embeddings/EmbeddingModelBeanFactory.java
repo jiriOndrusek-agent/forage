@@ -3,6 +3,9 @@ package io.kaoto.forage.models.embeddings;
 import io.kaoto.forage.core.annotations.FactoryType;
 import io.kaoto.forage.core.annotations.ForageFactory;
 import io.kaoto.forage.core.common.AbstractInstanceBeanFactory;
+import io.kaoto.forage.models.embeddings.common.EmbeddingModelCreator;
+import io.kaoto.forage.models.embeddings.common.EmbeddingModelFactoryConfig;
+import io.kaoto.forage.models.embeddings.common.EmbeddingModelModuleDescriptor;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 
 /**

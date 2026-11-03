@@ -1,9 +1,9 @@
-package io.kaoto.forage.vectordb.store;
+package io.kaoto.forage.vectordb.store.common;
 
 import io.kaoto.forage.core.util.config.AbstractConfig;
 import io.kaoto.forage.core.util.config.MissingConfigException;
 
-import static io.kaoto.forage.vectordb.store.EmbeddingStoreFactoryConfigEntries.KIND;
+import static io.kaoto.forage.vectordb.store.common.EmbeddingStoreFactoryConfigEntries.KIND;
 
 public class EmbeddingStoreFactoryConfig extends AbstractConfig {
     public EmbeddingStoreFactoryConfig() {

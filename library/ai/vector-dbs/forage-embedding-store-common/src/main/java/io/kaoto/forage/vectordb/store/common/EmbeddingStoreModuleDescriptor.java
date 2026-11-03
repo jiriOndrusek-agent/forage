@@ -1,4 +1,4 @@
-package io.kaoto.forage.vectordb.store;
+package io.kaoto.forage.vectordb.store.common;
 
 import java.util.ServiceLoader;
 import io.kaoto.forage.core.ai.EmbeddingStoreProvider;

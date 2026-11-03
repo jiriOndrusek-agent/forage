@@ -11,9 +11,9 @@ import io.kaoto.forage.core.annotations.FactoryType;
 import io.kaoto.forage.core.annotations.FactoryVariant;
 import io.kaoto.forage.core.annotations.ForageFactory;
 import io.kaoto.forage.core.common.AbstractInstanceBeanFactory;
-import io.kaoto.forage.models.embeddings.EmbeddingModelCreator;
-import io.kaoto.forage.models.embeddings.EmbeddingModelFactoryConfig;
-import io.kaoto.forage.models.embeddings.EmbeddingModelModuleDescriptor;
+import io.kaoto.forage.models.embeddings.common.EmbeddingModelCreator;
+import io.kaoto.forage.models.embeddings.common.EmbeddingModelFactoryConfig;
+import io.kaoto.forage.models.embeddings.common.EmbeddingModelModuleDescriptor;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 
 /**

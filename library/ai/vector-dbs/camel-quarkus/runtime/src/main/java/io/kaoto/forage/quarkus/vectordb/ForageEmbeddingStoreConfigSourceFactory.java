@@ -2,8 +2,8 @@ package io.kaoto.forage.quarkus.vectordb;
 
 import io.kaoto.forage.core.common.ForageModuleDescriptor;
 import io.kaoto.forage.core.common.ForageQuarkusConfigSourceAdapter;
-import io.kaoto.forage.vectordb.store.EmbeddingStoreFactoryConfig;
-import io.kaoto.forage.vectordb.store.EmbeddingStoreModuleDescriptor;
+import io.kaoto.forage.vectordb.store.common.EmbeddingStoreFactoryConfig;
+import io.kaoto.forage.vectordb.store.common.EmbeddingStoreModuleDescriptor;
 
 /**
  * Discovers the embedding store instances from all Quarkus config sources, for the deployment processor.

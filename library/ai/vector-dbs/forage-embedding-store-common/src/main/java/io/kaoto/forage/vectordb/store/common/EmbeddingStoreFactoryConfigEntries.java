@@ -1,4 +1,4 @@
-package io.kaoto.forage.vectordb.store;
+package io.kaoto.forage.vectordb.store.common;
 
 import io.kaoto.forage.core.util.config.ConfigEntries;
 import io.kaoto.forage.core.util.config.ConfigModule;
