@@ -1,6 +1,7 @@
 package io.kaoto.forage.agent;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,7 @@ import io.kaoto.forage.core.exceptions.RuntimeForageException;
 import io.kaoto.forage.core.guardrails.InputGuardrailProvider;
 import io.kaoto.forage.core.guardrails.OutputGuardrailProvider;
 import io.kaoto.forage.core.util.config.ConfigHelper;
+import io.kaoto.forage.core.util.config.ConfigModule;
 import io.kaoto.forage.core.util.config.ConfigStore;
 import io.kaoto.forage.models.embeddings.common.EmbeddingModelCreator;
 import io.kaoto.forage.vectordb.store.common.EmbeddingStoreCreator;
@@ -266,11 +268,33 @@ public final class AgentCreator {
                         config.embeddingModelBaseUrl());
 
                 // The embedding model provider of the chat model kind
-                return EmbeddingModelCreator.create(modelKind, prefix, classLoader);
+                Map<ConfigModule, String> previousCached = cachedValues(previousValues.keySet());
+                try {
+                    return EmbeddingModelCreator.create(modelKind, prefix, classLoader);
+                } finally {
+                    restoreCachedValues(previousValues.keySet(), previousCached);
+                }
             } finally {
                 restoreSystemProperties(previousValues);
             }
         }
+    }
+
+    // The provider config caches the bridged keys in the ConfigStore, where a standalone
+    // embedding model of the same kind would read them
+    private static Map<ConfigModule, String> cachedValues(Set<String> propertyNames) {
+        Map<ConfigModule, String> values = new HashMap<>();
+        for (Map.Entry<Object, Object> entry : ConfigStore.getInstance().entries()) {
+            if (entry.getKey() instanceof ConfigModule module && propertyNames.contains(module.propertyName())) {
+                values.put(module, (String) entry.getValue());
+            }
+        }
+        return values;
+    }
+
+    private static void restoreCachedValues(Set<String> propertyNames, Map<ConfigModule, String> previous) {
+        cachedValues(propertyNames).keySet().forEach(module -> ConfigStore.getInstance()
+                .set(module, previous.get(module)));
     }
 
     static EmbeddingStore<TextSegment> createEmbeddingStore(

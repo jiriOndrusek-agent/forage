@@ -21,6 +21,7 @@ import io.kaoto.forage.models.chat.mistralai.MistralAiConfigEntries;
 import io.kaoto.forage.models.chat.ollama.OllamaConfigEntries;
 import io.kaoto.forage.models.chat.openai.OpenAIConfigEntries;
 import io.kaoto.forage.models.chat.watsonxai.WatsonxAiConfigEntries;
+import io.kaoto.forage.models.embeddings.ollama.OllamaEmbeddingConfig;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.guardrail.InputGuardrail;
@@ -284,6 +285,23 @@ class AgentCreatorTest {
                     .isNull();
             assertThat(System.getProperty("forage.test.embed.embedding.model.name"))
                     .isNull();
+        }
+
+        @Test
+        @DisplayName("Bridged keys do not stay in the ConfigStore for a standalone embedding model")
+        void bridgedKeysDoNotStayCached() {
+            System.setProperty("forage.agent.embedding.model.base.url", "http://agent:11434");
+            System.setProperty("forage.agent.embedding.model.name", "agent-model");
+            ConfigStore.getInstance().reload();
+
+            assertThat(AgentCreator.createEmbeddingModel(
+                            new AgentConfig(), "ollama", AgentCreator.DEFAULT_AGENT, classLoader))
+                    .isNotNull();
+
+            // e.g. the embeddingModel bean of forage.embeddings.kind=ollama
+            OllamaEmbeddingConfig standalone = new OllamaEmbeddingConfig();
+            assertThat(standalone.baseUrl()).isEqualTo("http://localhost:11434");
+            assertThat(standalone.modelName()).isEqualTo("nomic-embed-text");
         }
     }
 
