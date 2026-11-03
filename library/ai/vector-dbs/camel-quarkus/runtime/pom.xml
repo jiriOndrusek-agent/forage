@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.kaoto.forage</groupId>
+        <artifactId>vectordbs-camel-quarkus</artifactId>
+        <version>1.6.3-SNAPSHOT</version>
+    </parent>
+    <artifactId>forage-quarkus-embedding-store</artifactId>
+    <name>Forage :: Library :: AI :: Vector Databases :: Quarkus Runtime</name>
+    <dependencies>
+        <dependency>
+            <groupId>org.apache.camel.quarkus</groupId>
+            <artifactId>camel-quarkus-core</artifactId>
+            <version>${camel-quarkus.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.kaoto.forage</groupId>
+            <artifactId>forage-embedding-store</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.smallrye.config</groupId>
+            <artifactId>smallrye-config</artifactId>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>io.quarkus</groupId>
+                <artifactId>quarkus-extension-maven-plugin</artifactId>
+                <version>${quarkus.version}</version>
+                <executions>
+                    <execution>
+                        <goals><goal>extension-descriptor</goal></goals>
+                        <configuration>
+                            <deployment>io.kaoto.forage:forage-quarkus-embedding-store-deployment:${project.version}</deployment>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

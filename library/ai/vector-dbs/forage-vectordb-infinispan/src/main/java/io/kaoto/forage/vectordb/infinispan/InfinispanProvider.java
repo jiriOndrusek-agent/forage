@@ -49,6 +49,7 @@ import dev.langchain4j.store.embedding.infinispan.InfinispanEmbeddingStore;
 @ForageBean(
         value = "infinispan",
         components = {"camel-langchain4j-embeddingstore"},
+        feature = "Embedding Store",
         description = "Infinispan distributed data store")
 public class InfinispanProvider implements EmbeddingStoreProvider {
     private static final Logger LOG = LoggerFactory.getLogger(InfinispanProvider.class);

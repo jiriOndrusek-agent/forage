@@ -604,6 +604,30 @@
                 </exclusion>
             </exclusions>
         </dependency>
+        <dependency>
+            <groupId>io.kaoto.forage</groupId>
+            <artifactId>forage-embedding-store</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.kaoto.forage</groupId>
+            <artifactId>forage-embedding-store-starter</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.kaoto.forage</groupId>
+            <artifactId>forage-quarkus-embedding-store-deployment</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.camel.quarkus</groupId>
+                    <artifactId>camel-quarkus-core-deployment</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <!-- Test dependencies -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>

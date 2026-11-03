@@ -174,6 +174,29 @@ class ForagePropertyValidatorTest {
     }
 
     @Test
+    void testEmbeddingStoreProperties() throws IOException {
+        createPropertiesFile(
+                "application.properties",
+                "forage.vectordb.kind=pgvector",
+                "forage.pgvector.host=localhost",
+                "forage.docs.vectordb.kind=in-memory-store",
+                "forage.agent.embedding.store.kind=pgvector");
+
+        assertThat(ForagePropertyValidator.validate(tempDir.toFile(), catalog).getWarnings())
+                .isEmpty();
+    }
+
+    @Test
+    void testTypoInEmbeddingStoreKind() throws IOException {
+        createPropertiesFile("application.properties", "forage.vectordb.kind=pgvectr");
+
+        ValidationResult result = ForagePropertyValidator.validate(tempDir.toFile(), catalog);
+
+        assertThat(result.getWarnings()).singleElement().satisfies(w -> assertThat(w.getMessage())
+                .contains("Did you mean 'pgvector'?"));
+    }
+
+    @Test
     void testOllamaChatModelPropertiesBelongToAgentFactory() throws IOException {
         // The catalog maps the shared ollama bean to the first factory listing it, so
         // forage-embedding-model must stay after the agent modules in forage-catalog/pom.xml

@@ -1,6 +1,7 @@
 package io.kaoto.forage.quarkus.embeddings.deployment;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import org.apache.camel.quarkus.core.deployment.spi.CamelRuntimeBeanBuildItem;
 import io.kaoto.forage.core.util.config.ConfigStore;
@@ -27,6 +28,10 @@ class ForageEmbeddingModelProcessorTest {
         System.clearProperty("forage.embeddings.kind");
         System.clearProperty("forage.docs.embeddings.kind");
         ConfigStore.getInstance().reload();
+        // The adapter keeps the discovered instance names in a static map
+        ConfigSourceContext empty = mock(ConfigSourceContext.class);
+        when(empty.iterateNames()).thenAnswer(ignored -> Collections.emptyIterator());
+        new ForageEmbeddingModelConfigSourceFactory().getConfigSources(empty);
     }
 
     @Test
