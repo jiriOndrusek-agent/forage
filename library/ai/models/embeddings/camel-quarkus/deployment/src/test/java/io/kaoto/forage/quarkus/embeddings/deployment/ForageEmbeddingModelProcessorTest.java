@@ -17,6 +17,7 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -56,6 +57,22 @@ class ForageEmbeddingModelProcessorTest {
     void ignoresKeysOfOtherModules() {
         loadConfigSources("forage.milvus.retrieve.embeddings.on.search", "false");
         assertNoRegistration();
+    }
+
+    @Test
+    void failsForNameOfAnotherBeanType() {
+        RuntimeValue<Object> value = new RuntimeValue<>(new Object());
+        List<CamelRuntimeBeanBuildItem> beans = List.of(
+                new CamelRuntimeBeanBuildItem("docs", EmbeddingModel.class.getName(), value),
+                new CamelRuntimeBeanBuildItem("notes", "dev.langchain4j.store.embedding.EmbeddingStore", value),
+                new CamelRuntimeBeanBuildItem("docs", "dev.langchain4j.store.embedding.EmbeddingStore", value));
+
+        assertThatThrownBy(() -> new ForageEmbeddingModelProcessor().checkBeanNames(beans))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageStartingWith(
+                        "Cannot register EmbeddingModel bean 'docs': the name is taken by a bean of type ");
+        assertThat(new ForageEmbeddingModelProcessor().checkBeanNames(beans.subList(0, 2)))
+                .isNotNull();
     }
 
     @Test

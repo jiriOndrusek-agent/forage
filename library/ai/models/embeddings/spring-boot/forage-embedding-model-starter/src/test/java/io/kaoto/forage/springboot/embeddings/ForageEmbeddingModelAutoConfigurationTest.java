@@ -68,6 +68,18 @@ class ForageEmbeddingModelAutoConfigurationTest {
     }
 
     @Test
+    void failsForNameOfAnotherBeanType() {
+        runner.withBean("embeddingModel", String.class, () -> "a String bean")
+                .withPropertyValues("forage.embeddings.kind=ollama")
+                .run(context -> assertThat(context)
+                        .hasFailed()
+                        .getFailure()
+                        .hasMessage(
+                                "Cannot register EmbeddingModel bean 'embeddingModel': the name is taken by a bean of type "
+                                        + "String. Give each bean its own name."));
+    }
+
+    @Test
     void failsForUnknownKind() {
         runner.withPropertyValues("forage.embeddings.kind=unknown")
                 .run(context ->
