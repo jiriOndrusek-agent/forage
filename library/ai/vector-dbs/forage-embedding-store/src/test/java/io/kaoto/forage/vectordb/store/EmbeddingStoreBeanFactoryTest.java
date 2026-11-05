@@ -26,7 +26,9 @@ class EmbeddingStoreBeanFactoryTest {
             "forage.alpha.vectordb.kind",
             "forage.beta.vectordb.kind",
             "forage.agent.embedding.store.kind",
-            "forage.in.memory.store.file.source");
+            "forage.in.memory.store.file.source",
+            "forage.agent.vectordb.kind",
+            "forage.myAgent.agent.vectordb.kind");
 
     private final DefaultCamelContext context = new DefaultCamelContext();
     private final EmbeddingStoreBeanFactory factory = new EmbeddingStoreBeanFactory();
@@ -56,6 +58,18 @@ class EmbeddingStoreBeanFactoryTest {
         factory.configure();
 
         assertThat(context.getRegistry().findByType(EmbeddingStore.class)).isEmpty();
+    }
+
+    @Test
+    void ignoresAgentKeys() {
+        System.setProperty("forage.vectordb.kind", "in-memory-store");
+        System.setProperty("forage.agent.vectordb.kind", "in-memory-store");
+        System.setProperty("forage.myAgent.agent.vectordb.kind", "in-memory-store");
+
+        factory.configure();
+
+        assertThat(context.getRegistry().findByTypeWithName(EmbeddingStore.class))
+                .containsOnlyKeys("embeddingStore");
     }
 
     @Test

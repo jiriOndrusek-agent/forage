@@ -28,6 +28,7 @@ class ForageEmbeddingModelProcessorTest {
     void reset() {
         System.clearProperty("forage.embeddings.kind");
         System.clearProperty("forage.docs.embeddings.kind");
+        System.clearProperty("forage.myAgent.agent.embeddings.kind");
         ConfigStore.getInstance().reload();
         // The adapter keeps the discovered instance names in a static map
         ConfigSourceContext empty = mock(ConfigSourceContext.class);
@@ -57,6 +58,15 @@ class ForageEmbeddingModelProcessorTest {
     void ignoresKeysOfOtherModules() {
         loadConfigSources("forage.milvus.retrieve.embeddings.on.search", "false");
         assertNoRegistration();
+    }
+
+    @Test
+    void ignoresAgentKeys() {
+        // Keys of older Agent docs: a model "agent" would fail the build with the Agent bean
+        loadConfigSources("forage.agent.embeddings.kind", "ollama");
+        System.setProperty("forage.myAgent.agent.embeddings.kind", "ollama");
+        System.setProperty("forage.embeddings.kind", "ollama");
+        verifyRegistration(null, "embeddingModel");
     }
 
     @Test

@@ -20,10 +20,11 @@ public class EmbeddingModelModuleDescriptor
     }
 
     // Instances are found by their kind key only: keys of other modules contain ".embeddings." too
-    // (e.g. forage.milvus.retrieve.embeddings.on.search).
+    // (e.g. forage.milvus.retrieve.embeddings.on.search). forage.[<agent>.]agent.embeddings.kind, a key
+    // of older Agent docs, is no instance: a model "agent" would clash with the Agent.
     @Override
     public String namedPropertyRegexp() {
-        return "forage\\.(.+)\\.embeddings\\.kind";
+        return "forage\\.(?!(?:.+\\.)?agent\\.embeddings\\.kind$)(.+)\\.embeddings\\.kind";
     }
 
     @Override
