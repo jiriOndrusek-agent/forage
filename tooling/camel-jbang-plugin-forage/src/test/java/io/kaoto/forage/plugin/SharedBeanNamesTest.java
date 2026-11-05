@@ -1,16 +1,20 @@
 package io.kaoto.forage.plugin;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileWriter;
 import java.lang.reflect.Field;
+import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
 import org.apache.camel.dsl.jbang.core.common.StringPrinter;
 import io.kaoto.forage.catalog.reader.ForageCatalogReader;
 import io.kaoto.forage.core.common.RuntimeType;
 import io.kaoto.forage.plugin.config.ConfigReadCommand;
+import io.kaoto.forage.plugin.config.ConfigWriteCommand;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -18,6 +22,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -254,6 +260,58 @@ class SharedBeanNamesTest {
                                 + "{\"embeddings.kind\":\"ollama\",\"model.kind\":\"ollama\"}");
     }
 
+    // config write picks the factory of a shared kind like config read and export
+    @ParameterizedTest
+    @CsvSource({"redis,host", "infinispan,username", "mariadb,url"})
+    void writeStore(String kind, String key) throws Exception {
+        String keyOfKind = "forage." + kind + "." + key;
+        JsonNode result = configWrite("{\"forage.vectordb.kind\":\"" + kind + "\",\"" + keyOfKind
+                + "\":\"test\",\"kind\":\"" + kind + "\",\"forage.bean.name\":\"docs\"}");
+
+        assertThat(result.get("factories").fieldNames()).toIterable().containsExactly("vectordb", "dependencies");
+        assertThat(written())
+                .containsExactlyInAnyOrder(
+                        "forage.docs.vectordb.kind=" + kind,
+                        "forage.docs." + kind + "." + key + "=test",
+                        "camel.jbang.dependencies=io.kaoto.forage:forage-vectordb-" + kind,
+                        "camel.jbang.dependencies.main=io.kaoto.forage:forage-embedding-store",
+                        "camel.jbang.dependencies.quarkus=io.kaoto.forage:forage-quarkus-embedding-store-deployment",
+                        "camel.jbang.dependencies.spring-boot=io.kaoto.forage:forage-embedding-store-starter");
+    }
+
+    @Test
+    void writeStoreWithoutKind() throws Exception {
+        assertThat(configWrite("{\"forage.vectordb.kind\":\"redis\",\"forage.redis.host\":\"localhost\"}")
+                        .get("factories")
+                        .fieldNames())
+                .toIterable()
+                .containsExactly("vectordb", "dependencies");
+    }
+
+    @Test
+    void writeMemoryAndJdbcAsBefore() throws Exception {
+        assertThat(configWrite("{\"forage.redis.host\":\"localhost\",\"kind\":\"redis\",\"forage.bean.name\":\"mem\"}")
+                        .get("factories")
+                        .fieldNames())
+                .toIterable()
+                .containsExactly("agent", "dependencies");
+        assertThat(configWrite("{\"forage.jdbc.db.kind\":\"mariadb\",\"kind\":\"mariadb\",\"forage.bean.name\":\"db\"}")
+                        .get("factories")
+                        .fieldNames())
+                .toIterable()
+                .containsExactly("jdbc", "dependencies");
+        assertThat(written())
+                .containsExactlyInAnyOrder(
+                        "forage.mem.redis.host=localhost",
+                        "forage.db.jdbc.db.kind=mariadb",
+                        "camel.jbang.dependencies=io.kaoto.forage:forage-jdbc-mariadb,io.kaoto.forage:forage-memory-redis",
+                        "camel.jbang.dependencies.main=io.kaoto.forage:forage-agent,io.kaoto.forage:forage-jdbc",
+                        "camel.jbang.dependencies.quarkus=io.kaoto.forage:forage-quarkus-agent-deployment,"
+                                + "io.kaoto.forage:forage-quarkus-jdbc-deployment",
+                        "camel.jbang.dependencies.spring-boot=io.kaoto.forage:forage-agent-starter,"
+                                + "io.kaoto.forage:forage-jdbc-starter");
+    }
+
     private void assertStoreProject(String kind, String configuration) throws Exception {
         assertThat(dependencies(RuntimeType.MAIN))
                 .containsExactly(FORAGE + "forage-embedding-store", FORAGE + "forage-vectordb-" + kind);
@@ -307,6 +365,31 @@ class SharedBeanNamesTest {
                     + bean.get("javaType").asText() + "|" + bean.get("configuration"));
         }
         return beans;
+    }
+
+    private JsonNode configWrite(String json) throws Exception {
+        StringPrinter printer = new StringPrinter();
+        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        set(command, "input", json);
+        set(command, "directory", tempDir);
+        set(command, "strategy", "application");
+        assertThat(command.doCall()).isZero();
+        return new ObjectMapper().readTree(printer.getOutput());
+    }
+
+    // key=value of application.properties, dependencies sorted and without versions
+    private Set<String> written() throws Exception {
+        Properties properties = new Properties();
+        try (FileInputStream in = new FileInputStream(new File(tempDir, "application.properties"))) {
+            properties.load(in);
+        }
+        return properties.stringPropertyNames().stream()
+                .map(key -> key + "="
+                        + Stream.of(properties.getProperty(key).split(","))
+                                .map(value -> value.replaceAll(":[0-9][^:]*$", ""))
+                                .sorted()
+                                .collect(Collectors.joining(",")))
+                .collect(Collectors.toSet());
     }
 
     private static void set(Object target, String name, Object value) throws Exception {
