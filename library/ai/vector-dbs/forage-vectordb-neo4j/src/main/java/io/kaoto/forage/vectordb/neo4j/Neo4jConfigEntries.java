@@ -43,7 +43,7 @@ public final class Neo4jConfigEntries extends ConfigEntries {
             ConfigTag.ADVANCED);
     public static final ConfigModule LABEL = ConfigModule.of(
             Neo4jConfig.class,
-            "neo4j.label",
+            "forage.neo4j.label",
             "Node label",
             "Label",
             "Document",
