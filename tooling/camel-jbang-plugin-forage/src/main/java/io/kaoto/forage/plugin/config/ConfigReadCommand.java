@@ -306,7 +306,7 @@ public class ConfigReadCommand extends CamelCommand {
      * where the instance name is optional and may contain dots. Tries the shortest instance name first,
      * so a key that is itself a config entry belongs to the default instance.
      *
-     * @return the parsed property, or null when no suffix of the key is a catalog config entry
+     * @return the parsed property, or null when the key matches no catalog config entry and no factory type key
      */
     private ParsedProperty parseUsingConfigEntries(String key) {
         String instanceName = null;
@@ -326,6 +326,13 @@ public class ConfigReadCommand extends CamelCommand {
                 return null;
             }
             String segment = entryKey.substring(0, dot);
+            // A factory with keys besides its kind owns the keys after its type key, like the scanner
+            // (e.g. forage.myAgent.agent.embeddings.kind is no embedding model "myAgent.agent")
+            Optional<ForageCatalogReader.FactoryMetadata> factory = catalog.getFactoryMetadata(segment);
+            if (factory.isPresent() && !factory.get().readsOnlyKind()) {
+                return new ParsedProperty(
+                        factory.get().factoryTypeKey(), instanceName, null, entryKey.substring(dot + 1));
+            }
             instanceName = instanceName == null ? segment : instanceName + "." + segment;
             entryKey = entryKey.substring(dot + 1);
         }

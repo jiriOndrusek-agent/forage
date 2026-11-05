@@ -167,6 +167,25 @@ class ForagePropertyScannerTest {
     }
 
     @Test
+    void agentKeysStayWithTheAgent() throws Exception {
+        writeFile(
+                "application.properties",
+                "forage.agent.embeddings.kind=ollama\n"
+                        + "forage.agent.vectordb.kind=in-memory-store\n"
+                        + "forage.myAgent.agent.embeddings.kind=ollama\n"
+                        + "forage.embeddings.kind=ollama\n"
+                        + "forage.docs.embeddings.kind=ollama\n");
+
+        Map<String, Map<String, List<String>>> result = ForagePropertyScanner.scanProperties(tempDir, catalog);
+
+        assertThat(result).containsOnlyKeys("agent", "embeddings");
+        assertThat(result.get("agent")).containsOnlyKeys("embeddings.kind", "vectordb.kind");
+        assertThat(result.get("agent").get("embeddings.kind")).containsExactly("ollama", "ollama");
+        assertThat(result.get("embeddings")).containsOnlyKeys("kind");
+        assertThat(result.get("embeddings").get("kind")).containsExactly("ollama", "ollama");
+    }
+
+    @Test
     void noPropertiesFiles() throws Exception {
         Map<String, Map<String, List<String>>> result = ForagePropertyScanner.scanProperties(tempDir, catalog);
 
