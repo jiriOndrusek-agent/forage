@@ -810,7 +810,8 @@ public final class ForageCatalogReader {
         /**
          * Whether the kind is the only key of the factory itself, like "forage.embeddings.kind" of the
          * embedding model: then "forage.embeddings.jdbc.url" can only be a key of an instance named "embeddings".
-         * Other factories own all keys after their type key (e.g. "forage.agent.embeddings.kind").
+         * A factory with other keys keeps the keys of such a factory after its type key
+         * (e.g. "forage.agent.embeddings.kind"), not those of other factories (e.g. "forage.keycloak.jdbc.url").
          */
         public boolean readsOnlyKind() {
             String ownPrefix = "forage." + factoryTypeKey + ".";

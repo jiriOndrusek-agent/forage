@@ -260,6 +260,43 @@ class SharedBeanNamesTest {
                                 + "{\"embeddings.kind\":\"ollama\",\"model.kind\":\"ollama\"}");
     }
 
+    // Only the embedding keys stay with a factory: forage.keycloak.jdbc.* are keys of a DataSource "keycloak"
+    @Test
+    void dataSourceNamedLikeAFactory() throws Exception {
+        write(
+                "forage.keycloak.jdbc.db.kind=postgresql",
+                "forage.keycloak.jdbc.url=jdbc:postgresql://localhost:5432/keycloak",
+                "forage.keycloak.jdbc.username=test");
+
+        assertThat(dependencies(RuntimeType.MAIN))
+                .containsExactly(FORAGE + "forage-jdbc", FORAGE + "forage-jdbc-postgresql");
+        assertThat(dependencies(RuntimeType.QUARKUS))
+                .containsExactly(
+                        FORAGE + "forage-jdbc-postgresql",
+                        FORAGE + "forage-quarkus-jdbc-deployment",
+                        "mvn:io.quarkus:quarkus-jdbc-postgresql",
+                        "mvn:org.apache.camel.quarkus:camel-quarkus-jdbc",
+                        "mvn:org.apache.camel.quarkus:camel-quarkus-sql");
+        assertThat(dependencies(RuntimeType.SPRING_BOOT))
+                .containsExactly(FORAGE + "forage-jdbc-postgresql", FORAGE + "forage-jdbc-starter");
+        assertThat(warnings()).isEmpty();
+        assertThat(beans())
+                .containsExactly("keycloak|postgresql|javax.sql.DataSource|{\"username\":\"test\","
+                        + "\"db.kind\":\"postgresql\",\"url\":\"jdbc:postgresql://localhost:5432/keycloak\"}");
+    }
+
+    @Test
+    void jmsConnectionNamedLikeAFactory() throws Exception {
+        write("forage.tls.jms.kind=artemis", "forage.tls.jms.broker.url=tcp://localhost:61616");
+
+        assertThat(dependencies(RuntimeType.MAIN))
+                .containsExactly(FORAGE + "forage-jms", FORAGE + "forage-jms-artemis");
+        assertThat(warnings()).isEmpty();
+        assertThat(beans())
+                .containsExactly("tls|artemis|jakarta.jms.ConnectionFactory|"
+                        + "{\"broker.url\":\"tcp://localhost:61616\",\"kind\":\"artemis\"}");
+    }
+
     // config write picks the factory of a shared kind like config read and export
     @ParameterizedTest
     @CsvSource({"redis,host", "infinispan,username", "mariadb,url"})
