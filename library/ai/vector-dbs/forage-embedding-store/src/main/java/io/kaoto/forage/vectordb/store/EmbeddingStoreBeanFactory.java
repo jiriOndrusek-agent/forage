@@ -1,5 +1,6 @@
 package io.kaoto.forage.vectordb.store;
 
+import io.kaoto.forage.core.annotations.BeanReference;
 import io.kaoto.forage.core.annotations.FactoryType;
 import io.kaoto.forage.core.annotations.ForageFactory;
 import io.kaoto.forage.core.common.AbstractInstanceBeanFactory;
@@ -20,7 +21,9 @@ import dev.langchain4j.store.embedding.EmbeddingStore;
         type = FactoryType.EMBEDDING_STORE,
         defaultBeanName = "embeddingStore",
         autowired = true,
-        configClass = EmbeddingStoreFactoryConfig.class)
+        configClass = EmbeddingStoreFactoryConfig.class,
+        // Not derived from the Camel catalog, which types the option EmbeddingStore<TextSegment>
+        beanReferences = @BeanReference(name = "langchain4j-embeddingstore", option = "embeddingStore"))
 public class EmbeddingStoreBeanFactory extends AbstractInstanceBeanFactory<EmbeddingStore<TextSegment>> {
 
     public EmbeddingStoreBeanFactory() {
