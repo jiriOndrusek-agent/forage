@@ -49,6 +49,13 @@ public final class SharedBeans {
     }
 
     /**
+     * The factory of a bean name: the ones selecting it (e.g. {@code forage.vectordb.kind=redis}), then the first one.
+     */
+    public Optional<String> factoryForBean(String beanName) {
+        return choose(catalog.findFactoryTypeKeysForBeanName(beanName), beanName, null);
+    }
+
+    /**
      * The factory of a config entry of a bean (e.g. {@code forage.redis.host} of {@code redis}).
      */
     public Optional<String> factoryForConfigEntry(String configEntryName, String beanName) {
@@ -57,7 +64,7 @@ public final class SharedBeans {
 
     private Optional<String> choose(List<String> factories, String beanName, String configEntryName) {
         List<String> candidates = factories;
-        if (candidates.size() > 1) {
+        if (candidates.size() > 1 && configEntryName != null) {
             List<String> declaring = catalog.findFactoryTypeKeysForConfigEntry(configEntryName);
             List<String> narrowed =
                     candidates.stream().filter(declaring::contains).toList();

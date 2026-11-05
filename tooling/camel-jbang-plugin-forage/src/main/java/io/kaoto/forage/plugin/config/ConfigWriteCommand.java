@@ -18,6 +18,7 @@ import java.util.Set;
 import org.apache.camel.dsl.jbang.core.commands.CamelCommand;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
 import io.kaoto.forage.catalog.reader.ForageCatalogReader;
+import io.kaoto.forage.plugin.SharedBeans;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -237,10 +238,17 @@ public class ConfigWriteCommand extends CamelCommand {
             }
         }
 
+        // The kinds selected in the input decide which factory owns a shared bean name, like config read
+        // and export (e.g. forage.vectordb.kind=redis)
+        Map<String, String> forageProperties = new HashMap<>();
+        configMap.forEach(
+                (key, value) -> forageProperties.put(FORAGE_PREFIX + catalog.normalizePropertyKey(key), value));
+        SharedBeans shared = new SharedBeans(catalog, forageProperties);
+
         // If kind is provided, find the factory type key for this bean type
         String kindFactoryTypeKey = null;
         if (globalKind != null) {
-            Optional<String> factoryTypeOpt = catalog.findFactoryTypeKeyForBeanName(globalKind);
+            Optional<String> factoryTypeOpt = shared.factoryForBean(globalKind);
             if (factoryTypeOpt.isPresent()) {
                 kindFactoryTypeKey = factoryTypeOpt.get();
                 factoryKinds.put(kindFactoryTypeKey, globalKind);
@@ -311,7 +319,8 @@ public class ConfigWriteCommand extends CamelCommand {
                 int dotIndex = normalizedKey.indexOf('.');
                 if (dotIndex > 0) {
                     String propertyPrefix = normalizedKey.substring(0, dotIndex);
-                    Optional<String> prefixFactoryTypeOpt = catalog.findFactoryTypeKeyForPropertyPrefix(propertyPrefix);
+                    Optional<String> prefixFactoryTypeOpt = catalog.findBeanNameForPropertyPrefix(propertyPrefix)
+                            .flatMap(beanName -> shared.factoryForBeanKey(beanName, normalizedKey));
                     if (prefixFactoryTypeOpt.isPresent()) {
                         factoryTypeKey = prefixFactoryTypeOpt.get();
                     } else {
