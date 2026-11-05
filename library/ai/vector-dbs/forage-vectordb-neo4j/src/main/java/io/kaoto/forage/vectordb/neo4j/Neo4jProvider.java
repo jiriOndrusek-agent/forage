@@ -49,7 +49,7 @@ import dev.langchain4j.store.embedding.EmbeddingStore;
  */
 @ForageBean(
         value = "neo4j",
-        components = {"camel-langchain4j-embeddingstore"},
+        // No component, so no factory lists it: kept out of the catalog, see <excludedBeans> in forage-catalog/pom.xml
         feature = "Embedding Store",
         description = "Neo4j graph database with vector support")
 public class Neo4jProvider implements EmbeddingStoreProvider {
