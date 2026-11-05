@@ -289,14 +289,15 @@ public final class ForagePropertyScanner {
         String restOfKey = parts[1];
 
         // Check if the first part is a known factory type key, unless it names an instance of
-        // another factory (e.g. forage.embeddings.jdbc.url); a factory with keys besides its kind keeps
-        // them (e.g. forage.agent.embeddings.kind)
+        // another factory (e.g. forage.embeddings.jdbc.url, forage.keycloak.jdbc.url); a factory with keys
+        // besides its kind keeps the keys of an embedding model or store (e.g. forage.agent.embeddings.kind)
         Optional<ForageCatalogReader.FactoryMetadata> factory = catalog.getFactoryMetadata(firstPart);
         if (factory.isPresent()) {
             String[] restParts = restOfKey.split("\\.", 2);
             if (restParts.length == 2
-                    && factory.get().readsOnlyKind()
-                    && catalog.getFactoryMetadata(restParts[0]).isPresent()) {
+                    && catalog.getFactoryMetadata(restParts[0])
+                            .filter(other -> factory.get().readsOnlyKind() || !other.readsOnlyKind())
+                            .isPresent()) {
                 return new ParseResult(restParts[0], restParts[1]);
             }
             return new ParseResult(firstPart, restOfKey);

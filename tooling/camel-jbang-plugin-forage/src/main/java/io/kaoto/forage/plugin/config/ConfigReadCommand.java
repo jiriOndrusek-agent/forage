@@ -326,15 +326,20 @@ public class ConfigReadCommand extends CamelCommand {
                 return null;
             }
             String segment = entryKey.substring(0, dot);
-            // A factory with keys besides its kind owns the keys after its type key, like the scanner
-            // (e.g. forage.myAgent.agent.embeddings.kind is no embedding model "myAgent.agent")
+            // A factory with keys besides its kind keeps the keys of an embedding model or store after its
+            // type key, like the scanner (e.g. forage.myAgent.agent.embeddings.kind is no embedding model
+            // "myAgent.agent"); forage.keycloak.jdbc.url is a key of a DataSource "keycloak"
             Optional<ForageCatalogReader.FactoryMetadata> factory = catalog.getFactoryMetadata(segment);
-            if (factory.isPresent() && !factory.get().readsOnlyKind()) {
-                return new ParsedProperty(
-                        factory.get().factoryTypeKey(), instanceName, null, entryKey.substring(dot + 1));
+            String rest = entryKey.substring(dot + 1);
+            if (factory.isPresent()
+                    && !factory.get().readsOnlyKind()
+                    && catalog.getFactoryMetadata(rest.split("\\.", 2)[0])
+                            .filter(ForageCatalogReader.FactoryMetadata::readsOnlyKind)
+                            .isPresent()) {
+                return new ParsedProperty(factory.get().factoryTypeKey(), instanceName, null, rest);
             }
             instanceName = instanceName == null ? segment : instanceName + "." + segment;
-            entryKey = entryKey.substring(dot + 1);
+            entryKey = rest;
         }
     }
 
