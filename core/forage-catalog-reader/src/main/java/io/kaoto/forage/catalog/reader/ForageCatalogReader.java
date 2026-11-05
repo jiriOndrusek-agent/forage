@@ -7,10 +7,12 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import io.kaoto.forage.catalog.model.ConditionalBeanGroup;
 import io.kaoto.forage.catalog.model.ConfigEntry;
@@ -53,6 +55,9 @@ public final class ForageCatalogReader {
     private final Map<String, Set<String>> configEntryToBeanNames;
     // Maps bean names to the name they are registered under when configured without an instance name
     private final Map<String, String> beanNameToDefaultBeanName;
+    // Maps bean names and config entry names to all factory type keys listing them, in catalog order
+    private final Map<String, Set<String>> beanNameToFactoryKeys;
+    private final Map<String, Set<String>> configEntryToFactoryKeys;
 
     private ForageCatalogReader(ForageCatalog catalog) {
         this.catalog = catalog;
@@ -66,6 +71,8 @@ public final class ForageCatalogReader {
         this.configEntryToFactoryKey = new HashMap<>();
         this.configEntryToBeanNames = new HashMap<>();
         this.beanNameToDefaultBeanName = new HashMap<>();
+        this.beanNameToFactoryKeys = new HashMap<>();
+        this.configEntryToFactoryKeys = new HashMap<>();
         parseCatalog();
     }
 
@@ -171,6 +178,9 @@ public final class ForageCatalogReader {
                 factoryMetadataByKey.put(factoryTypeKey, metadata);
                 for (ConfigEntry entry : configEntries) {
                     configEntryToFactoryKey.putIfAbsent(entry.getName(), factoryTypeKey);
+                    configEntryToFactoryKeys
+                            .computeIfAbsent(entry.getName(), k -> new LinkedHashSet<>())
+                            .add(factoryTypeKey);
                 }
 
                 // Store factory variants
@@ -189,10 +199,15 @@ public final class ForageCatalogReader {
                             for (ForageBean bean : beans) {
                                 String beanName = bean.getName();
                                 if (beanName != null && !beanName.isEmpty()) {
-                                    beanNameToFactoryKey.put(beanName.toLowerCase(), factoryTypeKey);
-                                    beanNameToFeature.put(beanName.toLowerCase(), featureName);
+                                    // A bean name listed by several factories (e.g. ollama, redis) belongs to
+                                    // the first factory, like the config entries below
+                                    beanNameToFactoryKey.putIfAbsent(beanName.toLowerCase(), factoryTypeKey);
+                                    beanNameToFactoryKeys
+                                            .computeIfAbsent(beanName.toLowerCase(), k -> new LinkedHashSet<>())
+                                            .add(factoryTypeKey);
+                                    beanNameToFeature.putIfAbsent(beanName.toLowerCase(), featureName);
                                     if (bean.getDefaultBeanName() != null) {
-                                        beanNameToDefaultBeanName.put(
+                                        beanNameToDefaultBeanName.putIfAbsent(
                                                 beanName.toLowerCase(), bean.getDefaultBeanName());
                                     }
 
@@ -209,6 +224,9 @@ public final class ForageCatalogReader {
                                     if (beanConfigEntries != null) {
                                         for (ConfigEntry configEntry : beanConfigEntries) {
                                             configEntryToFactoryKey.putIfAbsent(configEntry.getName(), factoryTypeKey);
+                                            configEntryToFactoryKeys
+                                                    .computeIfAbsent(configEntry.getName(), k -> new LinkedHashSet<>())
+                                                    .add(factoryTypeKey);
                                             configEntryToBeanNames
                                                     .computeIfAbsent(configEntry.getName(), k -> new HashSet<>())
                                                     .add(beanName);
@@ -401,6 +419,30 @@ public final class ForageCatalogReader {
     }
 
     /**
+     * Finds all factories listing a bean name, in catalog order: a name can be shared
+     * (e.g., "redis" is an Agent memory and an Embedding Store).
+     *
+     * @param beanName the bean name (e.g., "redis")
+     * @return the factory type keys, or an empty list if none found
+     */
+    public List<String> findFactoryTypeKeysForBeanName(String beanName) {
+        if (beanName == null) {
+            return List.of();
+        }
+        return List.copyOf(beanNameToFactoryKeys.getOrDefault(beanName.toLowerCase(), Set.of()));
+    }
+
+    /**
+     * Finds all factories declaring a config entry, directly or by one of their beans, in catalog order.
+     *
+     * @param configEntryName the config entry name (e.g., "forage.redis.host")
+     * @return the factory type keys, or an empty list if none found
+     */
+    public List<String> findFactoryTypeKeysForConfigEntry(String configEntryName) {
+        return List.copyOf(configEntryToFactoryKeys.getOrDefault(configEntryName, Set.of()));
+    }
+
+    /**
      * Finds the bean name (kind) for a given property prefix.
      * Property prefixes are extracted from bean configEntries (e.g., "google" from "forage.google.api.key").
      *
@@ -493,6 +535,28 @@ public final class ForageCatalogReader {
     }
 
     /**
+     * Gets the feature category of a bean within one factory, as a bean name can be shared
+     * (e.g., "redis" is "Memory" in the Agent and "Embedding Store" in the Embedding Store factory).
+     *
+     * @param factoryTypeKey the factory type key (e.g., "vectordb")
+     * @param beanName the bean name (e.g., "redis")
+     * @return Optional containing the feature category if found
+     */
+    public Optional<String> getBeanFeature(String factoryTypeKey, String beanName) {
+        if (beanName == null) {
+            return Optional.empty();
+        }
+        return findFactoryByTypeKey(factoryTypeKey == null ? "" : factoryTypeKey).stream()
+                .map(ForageFactory::getBeansByFeature)
+                .filter(beansByFeature -> beansByFeature != null)
+                .flatMap(List::stream)
+                .filter(featureBeans -> featureBeans.getBeans() != null
+                        && featureBeans.getBeans().stream().anyMatch(bean -> beanName.equalsIgnoreCase(bean.getName())))
+                .map(FeatureBeans::getFeature)
+                .findFirst();
+    }
+
+    /**
      * Gets the conditional bean groups for a given factory type key.
      *
      * @param factoryTypeKey the factory type key (e.g., "jdbc", "jms")
@@ -565,6 +629,22 @@ public final class ForageCatalogReader {
             return Collections.emptySet();
         }
         return beanNameToGav.getOrDefault(beanName.toLowerCase(), Collections.emptySet());
+    }
+
+    /**
+     * Gets the GAV coordinates of the beans with the given name within one factory. Unlike
+     * {@link #getBeanGavs(String)}, beans of other factories sharing the name (e.g., "mariadb"
+     * for DataSource and Embedding Store) are ignored.
+     *
+     * @param factoryTypeKey the factory type key (e.g., "jdbc", "agent")
+     * @param beanName the bean name (e.g., "mariadb", "ollama")
+     * @return a collection of matching GAVs, or an empty collection if none found
+     */
+    public Collection<String> getBeanGavs(String factoryTypeKey, String beanName) {
+        return beansOfFactory(factoryTypeKey, beanName)
+                .map(ForageBean::getGav)
+                .filter(gav -> gav != null && !gav.isEmpty())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     /**
@@ -652,6 +732,35 @@ public final class ForageCatalogReader {
     }
 
     /**
+     * Gets runtime dependencies of the beans with the given name within one factory, for a variant.
+     * Unlike {@link #getBeanRuntimeDependencies(String, String)}, beans of other factories sharing
+     * the name are ignored.
+     *
+     * @param factoryTypeKey the factory type key (e.g., "jdbc", "vectordb")
+     * @param beanName the bean name (e.g., "mariadb")
+     * @param variantName the variant name (e.g., "quarkus", "springboot")
+     * @return list of GAVs for the given variant, or empty list if none
+     */
+    public List<String> getBeanRuntimeDependencies(String factoryTypeKey, String beanName, String variantName) {
+        if (variantName == null) {
+            return List.of();
+        }
+        return beansOfFactory(factoryTypeKey, beanName)
+                .filter(bean -> bean.getRuntimeDependencies() != null)
+                .flatMap(bean ->
+                        bean.getRuntimeDependencies().getOrDefault(variantName.toLowerCase(), List.of()).stream())
+                .distinct()
+                .toList();
+    }
+
+    private Stream<ForageBean> beansOfFactory(String factoryTypeKey, String beanName) {
+        if (beanName == null) {
+            return Stream.empty();
+        }
+        return getAllBeansForFactory(factoryTypeKey).stream().filter(bean -> beanName.equalsIgnoreCase(bean.getName()));
+    }
+
+    /**
      * Gets runtime dependencies for a conditional bean group in a specific variant.
      *
      * @param factoryTypeKey the factory type key (e.g., "jdbc", "jms")
@@ -696,6 +805,20 @@ public final class ForageCatalogReader {
                 return Optional.empty();
             }
             return Optional.of(prefixPropertyName.substring("forage.".length()));
+        }
+
+        /**
+         * Whether the kind is the only key of the factory itself, like "forage.embeddings.kind" of the
+         * embedding model: then "forage.embeddings.jdbc.url" can only be a key of an instance named "embeddings".
+         * A factory with other keys keeps the keys of such a factory after its type key
+         * (e.g. "forage.agent.embeddings.kind"), not those of other factories (e.g. "forage.keycloak.jdbc.url").
+         */
+        public boolean readsOnlyKind() {
+            String ownPrefix = "forage." + factoryTypeKey + ".";
+            return configEntries.stream()
+                    .noneMatch(entry -> entry.getName() != null
+                            && entry.getName().startsWith(ownPrefix)
+                            && !"bean-name".equals(entry.getType()));
         }
     }
 
@@ -758,6 +881,8 @@ public final class ForageCatalogReader {
                 .flatMap(List::stream)
                 .filter(featureBeans -> feature.equalsIgnoreCase(featureBeans.getFeature()))
                 .flatMap(this::extractBeanNamesFromFeature)
+                // A bean can be listed by several factories (e.g. ollama under Agent and Embedding Model)
+                .distinct()
                 .toList();
     }
 

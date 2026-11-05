@@ -1,6 +1,7 @@
 package io.kaoto.forage.agent;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -14,7 +15,6 @@ import io.kaoto.forage.agent.factory.ConfigurationAware;
 import io.kaoto.forage.agent.factory.ForageAgentConfiguration;
 import io.kaoto.forage.core.ai.ChatMemoryBeanProvider;
 import io.kaoto.forage.core.ai.EmbeddingModelAware;
-import io.kaoto.forage.core.ai.EmbeddingModelProvider;
 import io.kaoto.forage.core.ai.EmbeddingStoreAware;
 import io.kaoto.forage.core.ai.EmbeddingStoreProvider;
 import io.kaoto.forage.core.ai.MaxMessagesAware;
@@ -25,7 +25,10 @@ import io.kaoto.forage.core.exceptions.RuntimeForageException;
 import io.kaoto.forage.core.guardrails.InputGuardrailProvider;
 import io.kaoto.forage.core.guardrails.OutputGuardrailProvider;
 import io.kaoto.forage.core.util.config.ConfigHelper;
+import io.kaoto.forage.core.util.config.ConfigModule;
 import io.kaoto.forage.core.util.config.ConfigStore;
+import io.kaoto.forage.models.embeddings.common.EmbeddingModelCreator;
+import io.kaoto.forage.vectordb.store.common.EmbeddingStoreCreator;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.guardrail.InputGuardrail;
 import dev.langchain4j.guardrail.OutputGuardrail;
@@ -115,10 +118,8 @@ public final class AgentCreator {
                 EmbeddingModel embeddingModel = createEmbeddingModel(config, modelKind, name, classLoader);
                 if (embeddingModel == null) {
                     throw new IllegalStateException(
-                            "Embedding configuration is present for agent '%s' but no EmbeddingModelProvider was found for kind '%s'. "
-                                            .formatted(name, modelKind)
-                                    + "Add the corresponding forage embedding model dependency to the classpath "
-                                    + "(e.g. forage-model-embeddings-ollama, forage-model-embeddings-openai).");
+                            "Embedding configuration is present for agent '%s' but the '%s' embedding model provider created no model."
+                                    .formatted(name, modelKind));
                 }
 
                 EmbeddingStore<TextSegment> embeddingStore =
@@ -231,73 +232,69 @@ public final class AgentCreator {
 
     static EmbeddingModel createEmbeddingModel(
             AgentConfig config, String modelKind, String agentName, ClassLoader classLoader) {
-        List<ServiceLoader.Provider<EmbeddingModelProvider>> providers = findEmbeddingModelProviders(classLoader);
+        String providerPrefix = getProviderConfigPrefix(modelKind);
+        String prefix = DEFAULT_AGENT.equals(agentName) ? null : agentName;
 
-        for (ServiceLoader.Provider<EmbeddingModelProvider> provider : providers) {
-            Class<? extends EmbeddingModelProvider> providerClass = provider.type();
-            ForageBean annotation = providerClass.getAnnotation(ForageBean.class);
-            if (annotation != null && annotation.value().equals(modelKind)) {
-                LOG.debug("Found embedding model provider for kind '{}': {}", modelKind, providerClass.getName());
-                EmbeddingModelProvider modelProvider = provider.get();
+        synchronized (CREATION_LOCK) {
+            Map<String, String> previousValues = new LinkedHashMap<>();
+            // Set calls run inside the try so partially-set properties are always restored
+            // even when an argument (e.g. a malformed embedding.model.timeout) throws.
+            try {
+                setSystemPropertyIfNotNull(
+                        previousValues,
+                        prefix,
+                        providerPrefix,
+                        "embedding.model.api.key",
+                        config.embeddingModelApiKey());
+                setSystemPropertyIfNotNull(
+                        previousValues, prefix, providerPrefix, "embedding.model.name", config.embeddingModelName());
+                setSystemPropertyIfNotNull(
+                        previousValues,
+                        prefix,
+                        providerPrefix,
+                        "embedding.model.timeout",
+                        config.embeddingModelTimeout());
+                setSystemPropertyIfNotNull(
+                        previousValues,
+                        prefix,
+                        providerPrefix,
+                        "embedding.model.max.retries",
+                        config.embeddingModelMaxRetries());
+                setSystemPropertyIfNotNull(
+                        previousValues,
+                        prefix,
+                        providerPrefix,
+                        "embedding.model.base.url",
+                        config.embeddingModelBaseUrl());
 
-                String providerPrefix = getProviderConfigPrefix(modelKind);
-                String prefix = DEFAULT_AGENT.equals(agentName) ? null : agentName;
-
-                synchronized (CREATION_LOCK) {
-                    Map<String, String> previousValues = new LinkedHashMap<>();
-                    // Set calls run inside the try so partially-set properties are always restored
-                    // even when an argument (e.g. a malformed embedding.model.timeout) throws.
-                    try {
-                        setSystemPropertyIfNotNull(
-                                previousValues,
-                                prefix,
-                                providerPrefix,
-                                "embedding.model.api.key",
-                                config.embeddingModelApiKey());
-                        setSystemPropertyIfNotNull(
-                                previousValues,
-                                prefix,
-                                providerPrefix,
-                                "embedding.model.name",
-                                config.embeddingModelName());
-                        setSystemPropertyIfNotNull(
-                                previousValues,
-                                prefix,
-                                providerPrefix,
-                                "embedding.model.timeout",
-                                config.embeddingModelTimeout());
-                        setSystemPropertyIfNotNull(
-                                previousValues,
-                                prefix,
-                                providerPrefix,
-                                "embedding.model.max.retries",
-                                config.embeddingModelMaxRetries());
-                        setSystemPropertyIfNotNull(
-                                previousValues,
-                                prefix,
-                                providerPrefix,
-                                "embedding.model.base.url",
-                                config.embeddingModelBaseUrl());
-
-                        return modelProvider.create(prefix);
-                    } finally {
-                        restoreSystemProperties(previousValues);
-                    }
+                // The embedding model provider of the chat model kind
+                Map<ConfigModule, String> previousCached = cachedValues(previousValues.keySet());
+                try {
+                    return EmbeddingModelCreator.create(modelKind, prefix, classLoader);
+                } finally {
+                    restoreCachedValues(previousValues.keySet(), previousCached);
                 }
+            } finally {
+                restoreSystemProperties(previousValues);
             }
         }
+    }
 
-        String availableKinds = providers.stream()
-                .map(p -> p.type().getAnnotation(ForageBean.class))
-                .filter(a -> a != null)
-                .map(ForageBean::value)
-                .reduce((a, b) -> a + ", " + b)
-                .orElse("none");
-        LOG.error(
-                "No embedding model provider found for kind '{}'. Available embedding providers: {}",
-                modelKind,
-                availableKinds);
-        return null;
+    // The provider config caches the bridged keys in the ConfigStore, where a standalone
+    // embedding model of the same kind would read them
+    private static Map<ConfigModule, String> cachedValues(Set<String> propertyNames) {
+        Map<ConfigModule, String> values = new HashMap<>();
+        for (Map.Entry<Object, Object> entry : ConfigStore.getInstance().entries()) {
+            if (entry.getKey() instanceof ConfigModule module && propertyNames.contains(module.propertyName())) {
+                values.put(module, (String) entry.getValue());
+            }
+        }
+        return values;
+    }
+
+    private static void restoreCachedValues(Set<String> propertyNames, Map<ConfigModule, String> previous) {
+        cachedValues(propertyNames).keySet().forEach(module -> ConfigStore.getInstance()
+                .set(module, previous.get(module)));
     }
 
     static EmbeddingStore<TextSegment> createEmbeddingStore(
@@ -318,10 +315,6 @@ public final class AgentCreator {
 
             String prefix = DEFAULT_AGENT.equals(agentName) ? null : agentName;
 
-            if (storeProvider instanceof EmbeddingModelAware modelAware) {
-                modelAware.withEmbeddingModel(model);
-            }
-
             synchronized (CREATION_LOCK) {
                 Map<String, String> previousValues = new LinkedHashMap<>();
                 try {
@@ -336,7 +329,7 @@ public final class AgentCreator {
                             "overlap.size",
                             config.embeddingStoreOverlapSize());
 
-                    return storeProvider.create(prefix);
+                    return EmbeddingStoreCreator.create(storeProvider, prefix, model);
                 } finally {
                     restoreSystemProperties(previousValues);
                 }
@@ -600,12 +593,6 @@ public final class AgentCreator {
 
     private static List<ServiceLoader.Provider<ModelProvider>> findModelProviders(ClassLoader classLoader) {
         ServiceLoader<ModelProvider> loader = ServiceLoader.load(ModelProvider.class, classLoader);
-        return loader.stream().toList();
-    }
-
-    private static List<ServiceLoader.Provider<EmbeddingModelProvider>> findEmbeddingModelProviders(
-            ClassLoader classLoader) {
-        ServiceLoader<EmbeddingModelProvider> loader = ServiceLoader.load(EmbeddingModelProvider.class, classLoader);
         return loader.stream().toList();
     }
 
