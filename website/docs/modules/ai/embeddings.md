@@ -34,6 +34,10 @@ beans, select one by name:
       embeddingModel: "#bean:docs"
 ```
 
+Give each bean its own name: a model and a store with the same name (`forage.docs.embeddings.kind`
+and `forage.docs.vectordb.kind`), or a model named like any other bean, fail the app at startup
+(Quarkus: at build time).
+
 {{ forage_properties("Embedding Model") }}
 
 To store the embeddings, see [Embedding Store Beans](vector-databases.md#embedding-store-beans).
@@ -47,3 +51,6 @@ An agent with RAG builds its own embedding model, with the provider of its chat 
 forage.myAgent.agent.embedding.model.name=nomic-embed-text
 forage.myAgent.agent.embedding.model.base.url=http://localhost:11434
 ```
+
+Keys under `forage.[<name>.]agent.` belong to the agent: `forage.myAgent.agent.embeddings.kind` of older docs
+creates no model bean.
