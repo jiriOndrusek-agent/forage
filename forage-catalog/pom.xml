@@ -607,6 +607,57 @@
             <version>${project.version}</version>
             <optional>true</optional>
         </dependency>
+
+        <!-- Embedding factories: keep them after the Agent and JDBC modules. Tooling maps a bean
+             name listed by several factories (ollama, redis, infinispan, mariadb) to the first one -->
+        <dependency>
+            <groupId>io.kaoto.forage</groupId>
+            <artifactId>forage-embedding-model</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.kaoto.forage</groupId>
+            <artifactId>forage-embedding-model-starter</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.kaoto.forage</groupId>
+            <artifactId>forage-quarkus-embedding-model-deployment</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.camel.quarkus</groupId>
+                    <artifactId>camel-quarkus-core-deployment</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>io.kaoto.forage</groupId>
+            <artifactId>forage-embedding-store</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.kaoto.forage</groupId>
+            <artifactId>forage-embedding-store-starter</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.kaoto.forage</groupId>
+            <artifactId>forage-quarkus-embedding-store-deployment</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.camel.quarkus</groupId>
+                    <artifactId>camel-quarkus-core-deployment</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <!-- Test dependencies -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -658,46 +709,10 @@
                         CatalogCompletenessTest reads this list too.
                     -->
                     <excludedBeans>
-                        <!-- Vector databases: the standalone EmbeddingStore factory is tracked by #538 -->
-                        <excludedBean>
-                            <className>io.kaoto.forage.vectordb.chroma.ChromaProvider</className>
-                            <reason>Pending #538: no factory declares camel-langchain4j-embeddings yet</reason>
-                        </excludedBean>
-                        <excludedBean>
-                            <className>io.kaoto.forage.vectordb.infinispan.InfinispanProvider</className>
-                            <reason>Pending #538: no factory declares camel-langchain4j-embeddings yet</reason>
-                        </excludedBean>
-                        <excludedBean>
-                            <className>io.kaoto.forage.vectordb.mariadb.MariaDbProvider</className>
-                            <reason>Pending #538: no factory declares camel-langchain4j-embeddings yet</reason>
-                        </excludedBean>
-                        <excludedBean>
-                            <className>io.kaoto.forage.vectordb.milvus.MilvusProvider</className>
-                            <reason>Pending #538: no factory declares camel-langchain4j-embeddings yet</reason>
-                        </excludedBean>
+                        <!-- Vector databases whose config keys do not pass the catalog checks yet -->
                         <excludedBean>
                             <className>io.kaoto.forage.vectordb.neo4j.Neo4jProvider</className>
-                            <reason>Pending #538: no factory declares camel-langchain4j-embeddings yet</reason>
-                        </excludedBean>
-                        <excludedBean>
-                            <className>io.kaoto.forage.vectordb.pgvector.PgVectorProvider</className>
-                            <reason>Pending #538: no factory declares camel-langchain4j-embeddings yet</reason>
-                        </excludedBean>
-                        <excludedBean>
-                            <className>io.kaoto.forage.vectordb.pinecone.PineconeProvider</className>
-                            <reason>Pending #538: no factory declares camel-langchain4j-embeddings yet</reason>
-                        </excludedBean>
-                        <excludedBean>
-                            <className>io.kaoto.forage.vectordb.qdrant.QdrantProvider</className>
-                            <reason>Pending #538: no factory declares camel-langchain4j-embeddings yet</reason>
-                        </excludedBean>
-                        <excludedBean>
-                            <className>io.kaoto.forage.vectordb.redis.RedisProvider</className>
-                            <reason>Pending #538: no factory declares camel-langchain4j-embeddings yet</reason>
-                        </excludedBean>
-                        <excludedBean>
-                            <className>io.kaoto.forage.vectordb.weaviate.WeaviateProvider</className>
-                            <reason>Pending #538: no factory declares camel-langchain4j-embeddings yet</reason>
+                            <reason>Its neo4j.label key has no forage. prefix, which CatalogUiMetadataTest rejects; to be fixed in a separate change</reason>
                         </excludedBean>
 
                         <!-- Providers that are only usable programmatically, not from the Kaoto wizard -->

@@ -42,6 +42,7 @@
         <module>cxf</module>
         <module>influxdb</module>
         <module>security</module>
+        <module>embeddings</module>
     </modules>
 
     <build>
