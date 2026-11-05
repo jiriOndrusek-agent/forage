@@ -19,10 +19,11 @@ public class EmbeddingStoreModuleDescriptor
         return "vectordb";
     }
 
-    // Instances are found by their kind key only, like the embedding models
+    // Instances are found by their kind key only, like the embedding models, without the Agent's
+    // forage.[<agent>.]agent.vectordb.kind
     @Override
     public String namedPropertyRegexp() {
-        return "forage\\.(.+)\\.vectordb\\.kind";
+        return "forage\\.(?!(?:.+\\.)?agent\\.vectordb\\.kind$)(.+)\\.vectordb\\.kind";
     }
 
     @Override

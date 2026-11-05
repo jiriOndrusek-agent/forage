@@ -25,7 +25,9 @@ class EmbeddingModelBeanFactoryTest {
             "forage.alpha.embeddings.kind",
             "forage.beta.embeddings.kind",
             "forage.beta.ollama.embedding.model.name",
-            "forage.milvus.retrieve.embeddings.on.search");
+            "forage.milvus.retrieve.embeddings.on.search",
+            "forage.agent.embeddings.kind",
+            "forage.myAgent.agent.embeddings.kind");
 
     private final DefaultCamelContext context = new DefaultCamelContext();
     private final EmbeddingModelBeanFactory factory = new EmbeddingModelBeanFactory();
@@ -56,6 +58,19 @@ class EmbeddingModelBeanFactoryTest {
         factory.configure();
 
         assertThat(context.getRegistry().findByType(EmbeddingModel.class)).isEmpty();
+    }
+
+    @Test
+    void ignoresAgentKeys() {
+        // Keys of older Agent docs: a model "agent" would clash with the Agent bean
+        System.setProperty("forage.embeddings.kind", "ollama");
+        System.setProperty("forage.agent.embeddings.kind", "ollama");
+        System.setProperty("forage.myAgent.agent.embeddings.kind", "ollama");
+
+        factory.configure();
+
+        assertThat(context.getRegistry().findByTypeWithName(EmbeddingModel.class))
+                .containsOnlyKeys("embeddingModel");
     }
 
     @Test
