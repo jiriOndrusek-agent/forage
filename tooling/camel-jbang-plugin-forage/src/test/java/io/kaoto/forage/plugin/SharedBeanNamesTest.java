@@ -215,6 +215,45 @@ class SharedBeanNamesTest {
                         + "\"db.kind\":\"mariadb\",\"url\":\"jdbc:mariadb://localhost:3306/test\"}");
     }
 
+    // forage.[<agent>.]agent.embeddings.* are keys of older docs: Agent keys that no factory reads
+    @Test
+    void agentKeysOfOlderDocs() throws Exception {
+        write(
+                "forage.agent.model.kind=ollama",
+                "forage.agent.embeddings.kind=ollama",
+                "forage.agent.embeddings.model.name=nomic-embed-text",
+                "forage.agent.vectordb.kind=in-memory-store",
+                "forage.myAgent.agent.model.kind=ollama",
+                "forage.myAgent.agent.embeddings.kind=ollama");
+
+        assertThat(dependencies(RuntimeType.MAIN))
+                .containsExactly(
+                        FORAGE + "forage-agent",
+                        FORAGE + "forage-model-embeddings-ollama",
+                        FORAGE + "forage-model-ollama");
+        assertThat(dependencies(RuntimeType.QUARKUS))
+                .containsExactly(
+                        FORAGE + "forage-model-embeddings-ollama",
+                        FORAGE + "forage-model-ollama",
+                        FORAGE + "forage-quarkus-agent-deployment");
+        assertThat(dependencies(RuntimeType.SPRING_BOOT))
+                .containsExactly(
+                        FORAGE + "forage-agent-starter",
+                        FORAGE + "forage-model-embeddings-ollama",
+                        FORAGE + "forage-model-ollama");
+        assertThat(warnings())
+                .containsExactlyInAnyOrder(
+                        "Unknown property 'embeddings.kind' for factory 'agent'",
+                        "Unknown property 'vectordb.kind' for factory 'agent'");
+        assertThat(beans())
+                .containsExactly(
+                        "agent|-|org.apache.camel.component.langchain4j.agent.api.Agent|{\"embeddings.kind\":\"ollama\","
+                                + "\"vectordb.kind\":\"in-memory-store\",\"model.kind\":\"ollama\","
+                                + "\"embeddings.model.name\":\"nomic-embed-text\"}",
+                        "myAgent|-|org.apache.camel.component.langchain4j.agent.api.Agent|"
+                                + "{\"embeddings.kind\":\"ollama\",\"model.kind\":\"ollama\"}");
+    }
+
     private void assertStoreProject(String kind, String configuration) throws Exception {
         assertThat(dependencies(RuntimeType.MAIN))
                 .containsExactly(FORAGE + "forage-embedding-store", FORAGE + "forage-vectordb-" + kind);

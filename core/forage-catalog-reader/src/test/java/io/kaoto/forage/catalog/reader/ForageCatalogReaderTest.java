@@ -261,6 +261,40 @@ class ForageCatalogReaderTest {
     }
 
     @Test
+    void testReadsOnlyKind() throws IOException {
+        String json =
+                """
+                {
+                  "factories": [
+                    {
+                      "name": "Agent",
+                      "configEntries": [
+                        { "name": "forage.agent.model.kind", "type": "bean-name" },
+                        { "name": "forage.agent.features", "type": "String" }
+                      ]
+                    },
+                    {
+                      "name": "Embedding Model",
+                      "configEntries": [
+                        { "name": "forage.embeddings.kind", "type": "bean-name" },
+                        { "name": "forage.ollama.embedding.model.name", "type": "string" }
+                      ]
+                    }
+                  ]
+                }
+                """;
+        ForageCatalogReader catalog =
+                ForageCatalogReader.fromInputStream(new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)));
+
+        assertThat(catalog.getFactoryMetadata("embeddings").orElseThrow().readsOnlyKind())
+                .isTrue();
+        assertThat(catalog.getFactoryMetadata("agent").orElseThrow().readsOnlyKind())
+                .isFalse();
+        assertThat(reader.getFactoryMetadata("jdbc").orElseThrow().readsOnlyKind())
+                .isFalse();
+    }
+
+    @Test
     void testGetRuntimeVersions() {
         Map<String, String> versions = reader.getRuntimeVersions();
         assertThat(versions).hasSize(3);
