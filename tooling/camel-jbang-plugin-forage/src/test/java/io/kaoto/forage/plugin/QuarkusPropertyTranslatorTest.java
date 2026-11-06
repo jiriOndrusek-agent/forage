@@ -320,6 +320,91 @@ class QuarkusPropertyTranslatorTest {
         }
 
         @Test
+        void nonAsciiValuesKeepTheGroup() throws IOException {
+            createPropertiesFile(
+                    "application.properties",
+                    "forage.ds1.jdbc.db.kind=postgresql",
+                    "forage.ds1.jdbc.url=jdbc:postgresql://localhost/db1",
+                    "forage.ds1.jdbc.username=j\u00fcrgen",
+                    "forage.ds1.jdbc.password=pass1");
+
+            QuarkusPropertyTranslator.TranslationResult result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+
+            assertThat(result.isEmpty()).isTrue();
+            assertThat(result.warnings())
+                    .containsExactly(
+                            "forage.ds1.jdbc.* kept unchanged: non-ASCII characters in forage.ds1.jdbc.username");
+        }
+
+        @Test
+        void dottedNamedConfigurationKeepsTheDefault() throws IOException {
+            createPropertiesFile(
+                    "application.properties",
+                    "forage.jdbc.db.kind=postgresql",
+                    "forage.jdbc.url=jdbc:postgresql://localhost/legacy",
+                    "forage.jdbc.username=admin",
+                    "forage.jdbc.password=secret",
+                    "forage.orders.db.jdbc.db.kind=postgresql",
+                    "forage.orders.db.jdbc.url=jdbc:postgresql://localhost/orders");
+
+            QuarkusPropertyTranslator.TranslationResult result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+
+            assertThat(result.isEmpty()).isTrue();
+            assertThat(result.warnings())
+                    .containsExactly("forage.jdbc.* and the named jdbc configurations kept unchanged: "
+                            + "Forage ignores forage.jdbc.* when named configurations exist");
+        }
+
+        @Test
+        void blankValueFromOutsideTheExportIsIgnored() throws IOException {
+            Path configDir = Files.createDirectories(tempDir.resolve("config"));
+            Files.write(configDir.resolve("forage-datasource-factory.properties"), List.of("forage.jdbc.password="));
+            createPropertiesFile(
+                    "application.properties",
+                    "forage.jdbc.db.kind=h2",
+                    "forage.jdbc.url=jdbc:h2:mem:test",
+                    "forage.jdbc.username=sa");
+            System.setProperty("forage.config.dir", configDir.toString());
+            try {
+                QuarkusPropertyTranslator.TranslationResult result =
+                        QuarkusPropertyTranslator.translate(tempDir.toFile());
+
+                assertThat(result.warnings()).isEmpty();
+                assertThat(flattenGroups(result))
+                        .containsEntry("quarkus.datasource.\"dataSource\".db-kind", "h2")
+                        .doesNotContainKey("quarkus.datasource.\"dataSource\".password");
+            } finally {
+                System.clearProperty("forage.config.dir");
+            }
+        }
+
+        @Test
+        void resolverValuesFromOutsideTheExportKeepTheGroup() throws IOException {
+            // Driver properties are read through the resolvers, e.g. from another application.properties
+            Path configDir = Files.createDirectories(tempDir.resolve("config"));
+            Files.write(
+                    configDir.resolve("application.properties"), List.of("forage.jdbc.properties.sslpassword=leaked"));
+            createPropertiesFile(
+                    "forage-datasource-factory.properties",
+                    "forage.jdbc.db.kind=postgresql",
+                    "forage.jdbc.url=jdbc:postgresql://localhost:5432/mydb",
+                    "forage.jdbc.username=admin",
+                    "forage.jdbc.password=secret");
+            System.setProperty("forage.config.dir", configDir.toString());
+            try {
+                QuarkusPropertyTranslator.TranslationResult result =
+                        QuarkusPropertyTranslator.translate(tempDir.toFile());
+
+                assertThat(result.isEmpty()).isTrue();
+                assertThat(result.warnings())
+                        .containsExactly("forage.jdbc.* kept unchanged: forage.jdbc.properties.sslpassword set "
+                                + "outside the exported files");
+            } finally {
+                System.clearProperty("forage.config.dir");
+            }
+        }
+
+        @Test
         void defaultArtemisConnectionFactoryTranslated() throws IOException {
             createPropertiesFile(
                     "application.properties",

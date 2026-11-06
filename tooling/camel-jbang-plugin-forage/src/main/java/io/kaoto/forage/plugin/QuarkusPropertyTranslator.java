@@ -17,13 +17,18 @@ import java.util.Properties;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.kaoto.forage.catalog.reader.ForageCatalogReader;
 import io.kaoto.forage.core.common.ForageModuleDescriptor;
 import io.kaoto.forage.core.util.config.Config;
+import io.kaoto.forage.core.util.config.ConfigHelper;
+import io.kaoto.forage.core.util.config.ConfigResolver;
 import io.kaoto.forage.core.util.config.ConfigStore;
+import io.kaoto.forage.core.util.config.PropertyFileLocator;
 import io.kaoto.forage.plugin.ForagePropertyScanner.PropertyOccurrence;
 
 /**
@@ -38,9 +43,9 @@ import io.kaoto.forage.plugin.ForagePropertyScanner.PropertyOccurrence;
  *
  * <p>A configuration (module and named prefix) is translated only when the translation replaces all its
  * properties (see {@link ForageModuleDescriptor#replacedByTranslation}) and they all come from the exported
- * files, for every profile: no {@code {{...}}} placeholder, no profile-specific value, no environment variable,
- * system property or file outside the export. Otherwise it stays unchanged, with a warning. So does a default
- * configuration next to named ones, which Forage ignores.
+ * files, for every profile: no {@code {{...}}} placeholder, no non-ASCII character, no profile-specific value, no
+ * environment variable, system property or file outside the export. Otherwise it stays unchanged, with a warning.
+ * So does a default configuration next to named ones, which Forage ignores.
  */
 public final class QuarkusPropertyTranslator {
 
@@ -75,7 +80,10 @@ public final class QuarkusPropertyTranslator {
         // 1. Scan working directory for forage.* properties across all files
         ForageCatalogReader catalog = ForageCatalogReader.getInstance();
         Map<String, Map<String, List<PropertyOccurrence>>> scanned =
-                ForagePropertyScanner.scanPropertiesWithFileTracking(workingDir, catalog, false);
+                ForagePropertyScanner.scanPropertiesWithFileTracking(workingDir, catalog, true);
+        Set<String> allKeys = new HashSet<>();
+        scanned.values().forEach(byName -> byName.values()
+                .forEach(occurrences -> occurrences.forEach(occ -> allKeys.add(occ.fullPropertyName()))));
 
         // 2. Discover the module descriptors of the translated modules (jdbc, jms) via ServiceLoader
         Map<String, ForageModuleDescriptor> descriptors = discoverDescriptors();
@@ -101,9 +109,11 @@ public final class QuarkusPropertyTranslator {
                     groupByPrefix(factoryEntry.getValue(), descriptor.modulePrefix());
 
             // Forage ignores the default configuration when named ones exist: translating the named ones only
-            // would make it use the default one at runtime
-            if (byPrefix.containsKey(null) && byPrefix.size() > 1) {
-                String module = descriptor.modulePrefix();
+            // would make it use the default one at runtime. Named ones are found as Forage does, dotted names too.
+            String module = descriptor.modulePrefix();
+            Pattern named = PropertyFileLocator.pattern(ConfigHelper.getNamedPropertyRegexp(module));
+            if (byPrefix.containsKey(null)
+                    && allKeys.stream().anyMatch(key -> named.matcher(key).matches())) {
                 warnings.add("forage." + module + ".* and the named " + module + " configurations kept unchanged: "
                         + "Forage ignores forage." + module + ".* when named configurations exist");
                 continue;
@@ -152,6 +162,17 @@ public final class QuarkusPropertyTranslator {
             return null;
         }
 
+        // The scanner reads the files as ISO-8859-1, Quarkus reads application.properties as UTF-8
+        List<String> nonAscii = props.entrySet().stream()
+                .filter(e -> e.getValue() != null && e.getValue().chars().anyMatch(c -> c > 0x7e))
+                .map(Map.Entry::getKey)
+                .sorted()
+                .toList();
+        if (!nonAscii.isEmpty()) {
+            warnings.add(group + " kept unchanged: non-ASCII characters in " + String.join(", ", nonAscii));
+            return null;
+        }
+
         // The base Quarkus properties would replace the values of the other profiles
         List<String> profileSpecific = profileKeys.stream()
                 .filter(n -> n.startsWith(keyPrefix))
@@ -180,10 +201,21 @@ public final class QuarkusPropertyTranslator {
             props.forEach(config::register);
 
             // The configuration also reads files outside the export (e.g. ~/.forage): keep their values out
-            List<String> external = ConfigStore.getInstance().propertyNames().stream()
+            ConfigStore store = ConfigStore.getInstance();
+            Set<String> external = new TreeSet<>();
+            store.propertyNames().stream()
                     .filter(n -> n.startsWith(keyPrefix) && !props.containsKey(n))
-                    .sorted()
-                    .toList();
+                    .filter(n -> !store.getByPropertyName(n).orElse("").isBlank())
+                    .forEach(external::add);
+            // Keys read through a resolver without being stored, e.g. driver properties
+            String keyRegexp = Pattern.quote(keyPrefix) + "(.+)";
+            for (ConfigResolver resolver : store.getResolvers()) {
+                resolver.discoverPrefixes(keyRegexp).stream()
+                        .map(suffix -> keyPrefix + suffix)
+                        .filter(n -> !props.containsKey(n))
+                        .filter(n -> !resolver.resolve(n).orElse("").isBlank())
+                        .forEach(external::add);
+            }
             if (!external.isEmpty()) {
                 warnings.add(
                         group + " kept unchanged: " + String.join(", ", external) + " set outside the exported files");
