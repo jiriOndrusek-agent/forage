@@ -251,6 +251,10 @@ class CatalogUiMetadataTest {
         assertThat(references.get("JMS Connection"))
                 .containsExactly("component:jms:connectionFactory:parameter:#{beanRef}");
         assertThat(references.get("Agent")).containsExactly("component:langchain4j-agent:agent:parameter:#{beanRef}");
+        assertThat(references.get("Embedding Model"))
+                .containsExactly("component:langchain4j-embeddings:embeddingModel:parameter:#{beanRef}");
+        assertThat(references.get("Embedding Store"))
+                .containsExactly("component:langchain4j-embeddingstore:embeddingStore:parameter:#{beanRef}");
         assertThat(references.get("CXF Web Service")).containsExactly("component:cxf:beanId:path:bean:{beanRef}");
         assertThat(references.get("Security Policy")).containsExactly("processor:policy:ref:attribute:{beanRef}");
         // Camel uses these beans without a route referencing them

@@ -41,7 +41,8 @@ import dev.langchain4j.store.embedding.milvus.MilvusEmbeddingStore;
  */
 @ForageBean(
         value = "milvus",
-        components = {"camel-langchain4j-embeddings"},
+        components = {"camel-langchain4j-embeddingstore"},
+        feature = "Embedding Store",
         description = "Milvus vector database")
 public class MilvusProvider implements EmbeddingStoreProvider {
     private static final Logger LOG = LoggerFactory.getLogger(MilvusProvider.class);
