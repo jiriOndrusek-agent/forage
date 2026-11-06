@@ -137,7 +137,8 @@ A configuration keeps its `forage.*` properties, which the Forage Quarkus extens
 
 - a property has no 1:1 Quarkus equivalent, for example transactions, aggregation and idempotent repositories,
   named or IBM MQ JMS connection factories.
-- a value uses a `{{...}}` placeholder, which Quarkus cannot resolve. `${...}` expressions are copied as they are.
+- a value uses a `{{...}}` placeholder, which Quarkus cannot resolve, or non-ASCII characters. `${...}` expressions
+  are copied as they are.
 - a value is profile-specific (`application-<profile>.properties`, `%<profile>.forage.*`), or comes from outside the
   exported files: an environment variable, a system property or `~/.forage`.
 - it is the default configuration of a module that also has named ones.
