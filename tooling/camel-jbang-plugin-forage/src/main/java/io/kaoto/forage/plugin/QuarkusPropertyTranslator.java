@@ -8,10 +8,12 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.kaoto.forage.catalog.reader.ForageCatalogReader;
@@ -31,8 +33,9 @@ import io.kaoto.forage.plugin.ForagePropertyScanner.PropertyOccurrence;
  * policies, web search) from their {@code forage.*} properties at runtime, so these stay unchanged.
  *
  * <p>A configuration (module and named prefix) is translated only when the translation replaces all its
- * properties (see {@link ForageModuleDescriptor#replacedByTranslation}). Otherwise it stays unchanged, with a
- * warning naming the properties that have no 1:1 Quarkus equivalent.
+ * properties (see {@link ForageModuleDescriptor#replacedByTranslation}), no value has a {@code {{...}}}
+ * placeholder and no environment variable or system property overrides it. Otherwise it stays unchanged,
+ * with a warning.
  */
 public final class QuarkusPropertyTranslator {
 
@@ -113,9 +116,35 @@ public final class QuarkusPropertyTranslator {
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static TranslationGroup translatePrefixGroup(
             ForageModuleDescriptor descriptor, String prefix, Map<String, String> props, List<String> warnings) {
-        String group = prefix == null
-                ? "forage." + descriptor.modulePrefix() + ".*"
-                : "forage." + prefix + "." + descriptor.modulePrefix() + ".*";
+        String keyPrefix = prefix == null
+                ? "forage." + descriptor.modulePrefix() + "."
+                : "forage." + prefix + "." + descriptor.modulePrefix() + ".";
+        String group = keyPrefix + "*";
+
+        // Quarkus cannot resolve {{...}} placeholders, Forage resolves them at runtime: keep them as they are
+        List<String> placeholders = props.entrySet().stream()
+                .filter(e -> e.getValue() != null && e.getValue().contains("{{"))
+                .map(Map.Entry::getKey)
+                .sorted()
+                .toList();
+        if (!placeholders.isEmpty()) {
+            warnings.add(group + " kept unchanged: Forage resolves the {{...}} placeholders of "
+                    + String.join(", ", placeholders) + " at runtime");
+            return null;
+        }
+
+        // Environment variables and system properties of the export override the files: keep their values out
+        String envPrefix = keyPrefix.replace('.', '_').toUpperCase(Locale.ROOT);
+        List<String> overrides = Stream.concat(
+                        System.getProperties().stringPropertyNames().stream().filter(n -> n.startsWith(keyPrefix)),
+                        System.getenv().keySet().stream().filter(n -> n.startsWith(envPrefix)))
+                .sorted()
+                .toList();
+        if (!overrides.isEmpty()) {
+            warnings.add(group + " kept unchanged: overridden by " + String.join(", ", overrides) + " when exporting");
+            return null;
+        }
+
         try {
             Config config = descriptor.createConfig(prefix);
             props.forEach(config::register);

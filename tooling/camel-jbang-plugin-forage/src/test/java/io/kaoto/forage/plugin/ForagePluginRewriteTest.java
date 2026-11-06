@@ -208,6 +208,30 @@ class ForagePluginRewriteTest {
         assertThat(lines).noneMatch(l -> l.startsWith("quarkus.datasource.\"dataSource\"."));
     }
 
+    @Test
+    void placeholdersComeThroughUnchanged() throws IOException {
+        List<String> original = List.of(
+                "forage.jdbc.db.kind=postgresql",
+                "forage.jdbc.url=jdbc:postgresql://localhost:5432/mydb",
+                "forage.jdbc.username={{env:W106_DB_USER:admin}}",
+                "forage.jdbc.password={{sys:w106.db.password}}");
+        Path appProps = writeProps(original.toArray(String[]::new));
+
+        System.setProperty("w106.db.password", "resolved-secret");
+        QuarkusPropertyTranslator.TranslationResult result;
+        try {
+            result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+        } finally {
+            System.clearProperty("w106.db.password");
+            ConfigStore.getInstance().reload();
+        }
+        ForagePlugin.rewriteApplicationProperties(appProps, result);
+
+        List<String> lines = Files.readAllLines(appProps);
+        assertThat(lines).isEqualTo(original);
+        assertThat(lines).noneMatch(l -> l.contains("resolved-secret") || l.endsWith("=admin"));
+    }
+
     private Path writeProps(String... lines) throws IOException {
         Path path = tempDir.resolve("application.properties");
         Files.write(path, List.of(lines));

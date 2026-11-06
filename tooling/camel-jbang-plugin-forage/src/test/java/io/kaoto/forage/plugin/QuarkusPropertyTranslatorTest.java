@@ -183,6 +183,71 @@ class QuarkusPropertyTranslatorTest {
         }
 
         @Test
+        void placeholdersKeepTheGroupUnchanged() throws IOException {
+            System.setProperty("w106.db.password", "resolved-secret");
+            try {
+                createPropertiesFile(
+                        "application.properties",
+                        "forage.jdbc.db.kind=postgresql",
+                        "forage.jdbc.url=jdbc:postgresql://localhost:5432/mydb",
+                        "forage.jdbc.username={{env:W106_DB_USER:admin}}",
+                        "forage.jdbc.password={{sys:w106.db.password}}");
+
+                QuarkusPropertyTranslator.TranslationResult result =
+                        QuarkusPropertyTranslator.translate(tempDir.toFile());
+
+                assertThat(result.isEmpty()).isTrue();
+                assertThat(result.translatedForageKeys()).isEmpty();
+                assertThat(result.warnings())
+                        .containsExactly("forage.jdbc.* kept unchanged: Forage resolves the {{...}} placeholders of "
+                                + "forage.jdbc.password, forage.jdbc.username at runtime");
+            } finally {
+                System.clearProperty("w106.db.password");
+            }
+        }
+
+        @Test
+        void quarkusExpressionsPassThrough() throws IOException {
+            createPropertiesFile(
+                    "application.properties",
+                    "forage.jdbc.db.kind=postgresql",
+                    "forage.jdbc.url=jdbc:postgresql://${DB_HOST:localhost}:5432/mydb",
+                    "forage.jdbc.username=admin",
+                    "forage.jdbc.password=${DB_PASSWORD}");
+
+            QuarkusPropertyTranslator.TranslationResult result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+
+            Map<String, String> qProps = flattenGroups(result);
+            assertThat(qProps)
+                    .containsEntry(
+                            "quarkus.datasource.\"dataSource\".jdbc.url",
+                            "jdbc:postgresql://${DB_HOST:localhost}:5432/mydb");
+            assertThat(qProps).containsEntry("quarkus.datasource.\"dataSource\".password", "${DB_PASSWORD}");
+        }
+
+        @Test
+        void overrideWhenExportingKeepsTheGroupUnchanged() throws IOException {
+            System.setProperty("forage.jdbc.password", "from-the-exporting-shell");
+            try {
+                createPropertiesFile(
+                        "application.properties",
+                        "forage.jdbc.db.kind=postgresql",
+                        "forage.jdbc.url=jdbc:postgresql://localhost:5432/mydb",
+                        "forage.jdbc.username=admin");
+
+                QuarkusPropertyTranslator.TranslationResult result =
+                        QuarkusPropertyTranslator.translate(tempDir.toFile());
+
+                assertThat(result.isEmpty()).isTrue();
+                assertThat(result.warnings())
+                        .containsExactly(
+                                "forage.jdbc.* kept unchanged: overridden by forage.jdbc.password when exporting");
+            } finally {
+                System.clearProperty("forage.jdbc.password");
+            }
+        }
+
+        @Test
         void defaultArtemisConnectionFactoryTranslated() throws IOException {
             createPropertiesFile(
                     "application.properties",
