@@ -133,8 +133,8 @@ public class ForagePlugin implements Plugin {
             throws IOException {
         Set<String> keysToRemove = result.translatedForageKeys();
         // Read and write as ISO-8859-1, which keeps the bytes of the other lines whatever the file encoding is.
-        // Every file is computed before any is written, so that a failure leaves the export unchanged.
-        Map<Path, List<String>> rewritten = new LinkedHashMap<>();
+        // Every file is encoded before any is written, so that a failure leaves the export unchanged.
+        Map<Path, byte[]> rewritten = new LinkedHashMap<>();
 
         // The other properties files (e.g. forage-datasource-factory.properties) are exported as they are
         List<Path> otherFiles;
@@ -149,7 +149,7 @@ public class ForagePlugin implements Plugin {
             List<String> lines = Files.readAllLines(file, StandardCharsets.ISO_8859_1);
             List<String> kept = withoutKeys(lines, keysToRemove);
             if (kept.size() != lines.size()) {
-                rewritten.put(file, kept);
+                rewritten.put(file, toBytes(kept));
             }
         }
 
@@ -158,11 +158,21 @@ public class ForagePlugin implements Plugin {
         List<String> appLines = new ArrayList<>(
                 withoutKeys(Files.readAllLines(appPropsPath, StandardCharsets.ISO_8859_1), keysToRemove));
         result.groups().stream().flatMap(ForagePlugin::translationGroupToLines).forEach(appLines::add);
-        rewritten.put(appPropsPath, appLines);
+        rewritten.put(appPropsPath, toBytes(appLines));
 
-        for (Map.Entry<Path, List<String>> file : rewritten.entrySet()) {
-            Files.write(file.getKey(), file.getValue(), StandardCharsets.ISO_8859_1);
+        for (Map.Entry<Path, byte[]> file : rewritten.entrySet()) {
+            Files.write(file.getKey(), file.getValue());
         }
+    }
+
+    /**
+     * Encodes the lines as ISO-8859-1. Written keys and values are escaped to ASCII, so only a character of a
+     * comment can be replaced by {@code ?}.
+     */
+    private static byte[] toBytes(List<String> lines) {
+        StringBuilder content = new StringBuilder();
+        lines.forEach(line -> content.append(line).append(System.lineSeparator()));
+        return content.toString().getBytes(StandardCharsets.ISO_8859_1);
     }
 
     /**

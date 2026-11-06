@@ -419,6 +419,31 @@ class ForagePluginRewriteTest {
         assertThat(Files.readAllLines(appProps)).contains("quarkus.datasource.\"ds1\".db-kind=postgresql");
     }
 
+    @Test
+    void keyOutsideLatin1IsWrittenEscaped() throws IOException {
+        Path appProps = writeProps(
+                "forage.ds1.jdbc.db.kind=postgresql",
+                "forage.ds1.jdbc.url=jdbc:postgresql://localhost/db1",
+                "forage.ds1.jdbc.username=user1",
+                "forage.ds1.jdbc.password=pass1",
+                "forage.ds1.jdbc.properties.price\\u20AC=1");
+
+        QuarkusPropertyTranslator.TranslationResult result;
+        try {
+            result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+        } finally {
+            ConfigStore.getInstance().reload();
+        }
+        ForagePlugin.rewriteApplicationProperties(appProps, result);
+
+        Properties exported = new Properties();
+        try (Reader reader = Files.newBufferedReader(appProps)) {
+            exported.load(reader);
+        }
+        assertThat(exported.getProperty("quarkus.datasource.\"ds1\".jdbc.additional-jdbc-properties.\"price\u20AC\""))
+                .isEqualTo("1");
+    }
+
     private Path writeProps(String... lines) throws IOException {
         Path path = tempDir.resolve("application.properties");
         Files.write(path, List.of(lines));
