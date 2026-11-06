@@ -1,12 +1,14 @@
 package io.kaoto.forage.plugin;
 
 import java.io.IOException;
+import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import io.kaoto.forage.core.util.config.ConfigStore;
 
@@ -316,6 +318,59 @@ class ForagePluginRewriteTest {
 
         assertThat(Files.readAllLines(appProps))
                 .contains("quarkus.datasource.\"ds1\".jdbc.url=jdbc:postgresql://from-application/db");
+    }
+
+    @Test
+    void propertiesWithOtherSeparatorsAndContinuationLinesRemoved() throws IOException {
+        Path appProps = writeProps("camel.main.name=demo");
+        Path forageProps = tempDir.resolve("forage-datasource-factory.properties");
+        Files.write(
+                forageProps,
+                List.of(
+                        "forage.ds1.jdbc.db.kind: postgresql",
+                        "  forage.ds1.jdbc.url = jdbc:postgresql://localhost/\\",
+                        "      db1",
+                        "forage.ds1.jdbc.username user1",
+                        "forage.ds1.jdbc.password=pass1",
+                        "# forage.ds1.jdbc.url=commented out",
+                        "other.key=value"));
+
+        QuarkusPropertyTranslator.TranslationResult result;
+        try {
+            result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+        } finally {
+            ConfigStore.getInstance().reload();
+        }
+        ForagePlugin.rewriteApplicationProperties(appProps, result);
+
+        assertThat(Files.readAllLines(forageProps))
+                .containsExactly("# forage.ds1.jdbc.url=commented out", "other.key=value");
+        assertThat(Files.readAllLines(appProps))
+                .contains("quarkus.datasource.\"ds1\".jdbc.url=jdbc:postgresql://localhost/db1");
+    }
+
+    @Test
+    void translatedValuesAreEscaped() throws IOException {
+        Path appProps = writeProps(
+                "forage.ds1.jdbc.db.kind=postgresql",
+                "forage.ds1.jdbc.url=jdbc:postgresql://localhost/db1",
+                "forage.ds1.jdbc.username=\\ user1",
+                "forage.ds1.jdbc.password=pa\\\\ss");
+
+        QuarkusPropertyTranslator.TranslationResult result;
+        try {
+            result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+        } finally {
+            ConfigStore.getInstance().reload();
+        }
+        ForagePlugin.rewriteApplicationProperties(appProps, result);
+
+        Properties exported = new Properties();
+        try (Reader reader = Files.newBufferedReader(appProps)) {
+            exported.load(reader);
+        }
+        assertThat(exported.getProperty("quarkus.datasource.\"ds1\".password")).isEqualTo("pa\\ss");
+        assertThat(exported.getProperty("quarkus.datasource.\"ds1\".username")).isEqualTo(" user1");
     }
 
     private Path writeProps(String... lines) throws IOException {

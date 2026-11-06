@@ -3,6 +3,7 @@ package io.kaoto.forage.plugin;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -139,14 +140,14 @@ public class ForagePlugin implements Plugin {
         }
         for (Path file : otherFiles) {
             List<String> lines = Files.readAllLines(file);
-            List<String> kept = withoutKeys(lines, keysToRemove).toList();
+            List<String> kept = withoutKeys(lines, keysToRemove);
             if (kept.size() != lines.size()) {
                 Files.write(file, kept);
             }
         }
 
         // Keep every line except those whose key was translated to Quarkus format
-        Stream<String> filtered = withoutKeys(Files.readAllLines(appPropsPath), keysToRemove);
+        Stream<String> filtered = withoutKeys(Files.readAllLines(appPropsPath), keysToRemove).stream();
 
         // Append each translation group with a header showing the original forage properties
         Stream<String> translated = result.groups().stream().flatMap(ForagePlugin::translationGroupToLines);
@@ -154,24 +155,73 @@ public class ForagePlugin implements Plugin {
         Files.write(appPropsPath, Stream.concat(filtered, translated).toList());
     }
 
-    private static Stream<String> withoutKeys(List<String> lines, Set<String> keysToRemove) {
-        return lines.stream().filter(line -> {
-            String key = extractPropertyKey(line);
-            return key == null || !keysToRemove.contains(key);
-        });
+    /**
+     * Removes the properties with the given keys, continuation lines included, reading the lines as
+     * {@link java.util.Properties} does.
+     */
+    private static List<String> withoutKeys(List<String> lines, Set<String> keysToRemove) {
+        List<String> kept = new ArrayList<>();
+        boolean continuation = false;
+        boolean removing = false;
+        for (String line : lines) {
+            boolean comment = false;
+            if (!continuation) {
+                String trimmed = line.stripLeading();
+                comment = trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith("!");
+                removing = !comment && keysToRemove.contains(extractPropertyKey(trimmed));
+            }
+            if (!removing) {
+                kept.add(line);
+            }
+            // A line ending with an odd number of backslashes continues on the next one
+            int backslashes = 0;
+            for (int i = line.length() - 1; i >= 0 && line.charAt(i) == '\\'; i--) {
+                backslashes++;
+            }
+            continuation = !comment && backslashes % 2 == 1;
+        }
+        return kept;
     }
 
     /**
-     * Extracts the property key from a .properties file line.
-     * Returns {@code null} for blank lines, comments, and lines without '='.
+     * Extracts the key of a property line without its leading whitespace: up to the first unescaped
+     * {@code =}, {@code :} or whitespace.
      */
     private static String extractPropertyKey(String line) {
-        String trimmed = line.trim();
-        if (trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith("!")) {
-            return null;
+        int end = 0;
+        while (end < line.length()) {
+            char c = line.charAt(end);
+            if (c == '\\') {
+                end += 2;
+            } else if (c == '=' || c == ':' || Character.isWhitespace(c)) {
+                break;
+            } else {
+                end++;
+            }
         }
-        int eqIdx = trimmed.indexOf('=');
-        return eqIdx < 0 ? null : trimmed.substring(0, eqIdx).trim();
+        return line.substring(0, Math.min(end, line.length()));
+    }
+
+    /**
+     * Escapes a key or a value for a properties file, as {@link java.util.Properties#store} does, but keeps
+     * non-ASCII characters (Quarkus reads application.properties as UTF-8).
+     */
+    private static String escape(String text, boolean key) {
+        StringBuilder escaped = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '\\' -> escaped.append("\\\\");
+                case '\t' -> escaped.append("\\t");
+                case '\n' -> escaped.append("\\n");
+                case '\r' -> escaped.append("\\r");
+                case '\f' -> escaped.append("\\f");
+                case ' ' -> escaped.append(key || i == 0 ? "\\ " : " ");
+                case '=', ':', '#', '!' -> escaped.append(key ? "\\" : "").append(c);
+                default -> escaped.append(c);
+            }
+        }
+        return escaped.toString();
     }
 
     private static Stream<String> translationGroupToLines(QuarkusPropertyTranslator.TranslationGroup group) {
@@ -183,10 +233,10 @@ public class ForagePlugin implements Plugin {
             lines.add("# Properties for " + group.moduleType());
         }
         lines.add("# Translated from:");
-        new TreeMap<>(group.sourceProperties()).forEach((k, v) -> lines.add("#   " + k + "=" + v));
+        new TreeMap<>(group.sourceProperties()).forEach((k, v) -> lines.add("#   " + k + "=" + escape(v, false)));
         new TreeMap<>(group.properties()).forEach((k, v) -> {
             if (v != null) {
-                lines.add(k + "=" + v);
+                lines.add(escape(k, true) + "=" + escape(v, false));
             }
         });
         return lines.build();
