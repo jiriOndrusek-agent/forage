@@ -66,7 +66,7 @@ public abstract class ForageQuarkusConfigSourceAdapter<C extends Config> impleme
         ConfigStore.getInstance().setClassLoader(Thread.currentThread().getContextClassLoader());
 
         C defaultConfig = desc.createConfig(null);
-        String namedRegexp = ConfigHelper.getNamedPropertyRegexp(desc.modulePrefix());
+        String namedRegexp = desc.namedPropertyRegexp();
         Set<String> prefixes = new HashSet<>(ConfigStore.getInstance().readPrefixes(defaultConfig, namedRegexp));
         prefixes.addAll(discoverPrefixesFromContext(context, namedRegexp));
 
@@ -74,7 +74,7 @@ public abstract class ForageQuarkusConfigSourceAdapter<C extends Config> impleme
 
         Map<String, String> configuration = new HashMap<>();
 
-        String defaultRegexp = ConfigHelper.getDefaultPropertyRegexp(desc.modulePrefix());
+        String defaultRegexp = desc.defaultPropertyRegexp();
         if (!prefixes.isEmpty()) {
             for (String name : prefixes) {
                 C config = desc.createConfig(name);

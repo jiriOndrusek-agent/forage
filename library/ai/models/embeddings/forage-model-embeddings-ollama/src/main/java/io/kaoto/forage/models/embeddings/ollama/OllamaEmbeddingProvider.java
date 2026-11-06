@@ -43,7 +43,7 @@ import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
  */
 @ForageBean(
         value = "ollama",
-        components = {"camel-langchain4j-agent"},
+        components = {"camel-langchain4j-agent", "camel-langchain4j-embeddings"},
         feature = "Embeddings Model",
         description = "Locally-hosted models via Ollama (Llama, Mistral, etc.)")
 public class OllamaEmbeddingProvider implements EmbeddingModelProvider {
