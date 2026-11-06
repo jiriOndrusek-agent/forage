@@ -131,8 +131,10 @@ public class ForagePlugin implements Plugin {
         // The other properties files (e.g. forage-datasource-factory.properties) are exported as they are
         List<Path> otherFiles;
         try (Stream<Path> files = Files.list(appPropsPath.getParent())) {
-            otherFiles = files.filter(f -> !f.equals(appPropsPath)
-                            && f.getFileName().toString().endsWith(".properties"))
+            otherFiles = files.filter(f -> {
+                        String name = f.getFileName().toString();
+                        return name.endsWith(".properties") && !name.startsWith("application");
+                    })
                     .toList();
         }
         for (Path file : otherFiles) {

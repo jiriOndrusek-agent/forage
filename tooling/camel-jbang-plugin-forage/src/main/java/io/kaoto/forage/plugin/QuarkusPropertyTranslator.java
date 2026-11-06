@@ -1,15 +1,19 @@
 package io.kaoto.forage.plugin;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Properties;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.TreeMap;
@@ -33,9 +37,10 @@ import io.kaoto.forage.plugin.ForagePropertyScanner.PropertyOccurrence;
  * policies, web search) from their {@code forage.*} properties at runtime, so these stay unchanged.
  *
  * <p>A configuration (module and named prefix) is translated only when the translation replaces all its
- * properties (see {@link ForageModuleDescriptor#replacedByTranslation}), no value has a {@code {{...}}}
- * placeholder and no environment variable or system property overrides it. Otherwise it stays unchanged,
- * with a warning.
+ * properties (see {@link ForageModuleDescriptor#replacedByTranslation}) and they all come from the exported
+ * files, for every profile: no {@code {{...}}} placeholder, no profile-specific value, no environment variable,
+ * system property or file outside the export. Otherwise it stays unchanged, with a warning. So does a default
+ * configuration next to named ones, which Forage ignores.
  */
 public final class QuarkusPropertyTranslator {
 
@@ -74,6 +79,7 @@ public final class QuarkusPropertyTranslator {
 
         // 2. Discover the module descriptors of the translated modules (jdbc, jms) via ServiceLoader
         Map<String, ForageModuleDescriptor> descriptors = discoverDescriptors();
+        Set<String> profileKeys = profileKeys(workingDir);
 
         // 3. For each translated module, group its properties by named prefix and translate
         List<TranslationGroup> groups = new ArrayList<>();
@@ -94,11 +100,20 @@ public final class QuarkusPropertyTranslator {
             Map<String, Map<String, String>> byPrefix =
                     groupByPrefix(factoryEntry.getValue(), descriptor.modulePrefix());
 
+            // Forage ignores the default configuration when named ones exist: translating the named ones only
+            // would make it use the default one at runtime
+            if (byPrefix.containsKey(null) && byPrefix.size() > 1) {
+                String module = descriptor.modulePrefix();
+                warnings.add("forage." + module + ".* and the named " + module + " configurations kept unchanged: "
+                        + "Forage ignores forage." + module + ".* when named configurations exist");
+                continue;
+            }
+
             for (Map.Entry<String, Map<String, String>> prefixEntry : byPrefix.entrySet()) {
                 String prefix = prefixEntry.getKey();
                 Map<String, String> props = prefixEntry.getValue();
 
-                TranslationGroup group = translatePrefixGroup(descriptor, prefix, props, warnings);
+                TranslationGroup group = translatePrefixGroup(descriptor, prefix, props, profileKeys, warnings);
                 if (group != null) {
                     groups.add(group);
                     translatedForageKeys.addAll(props.keySet());
@@ -115,7 +130,11 @@ public final class QuarkusPropertyTranslator {
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static TranslationGroup translatePrefixGroup(
-            ForageModuleDescriptor descriptor, String prefix, Map<String, String> props, List<String> warnings) {
+            ForageModuleDescriptor descriptor,
+            String prefix,
+            Map<String, String> props,
+            Set<String> profileKeys,
+            List<String> warnings) {
         String keyPrefix = prefix == null
                 ? "forage." + descriptor.modulePrefix() + "."
                 : "forage." + prefix + "." + descriptor.modulePrefix() + ".";
@@ -133,6 +152,16 @@ public final class QuarkusPropertyTranslator {
             return null;
         }
 
+        // The base Quarkus properties would replace the values of the other profiles
+        List<String> profileSpecific = profileKeys.stream()
+                .filter(n -> n.startsWith(keyPrefix))
+                .sorted()
+                .toList();
+        if (!profileSpecific.isEmpty()) {
+            warnings.add(group + " kept unchanged: profile-specific values for " + String.join(", ", profileSpecific));
+            return null;
+        }
+
         // Environment variables and system properties of the export override the files: keep their values out
         String envPrefix = keyPrefix.replace('.', '_').toUpperCase(Locale.ROOT);
         List<String> overrides = Stream.concat(
@@ -146,8 +175,20 @@ public final class QuarkusPropertyTranslator {
         }
 
         try {
+            ConfigStore.getInstance().reload();
             Config config = descriptor.createConfig(prefix);
             props.forEach(config::register);
+
+            // The configuration also reads files outside the export (e.g. ~/.forage): keep their values out
+            List<String> external = ConfigStore.getInstance().propertyNames().stream()
+                    .filter(n -> n.startsWith(keyPrefix) && !props.containsKey(n))
+                    .sorted()
+                    .toList();
+            if (!external.isEmpty()) {
+                warnings.add(
+                        group + " kept unchanged: " + String.join(", ", external) + " set outside the exported files");
+                return null;
+            }
 
             List<String> notReplaced = props.keySet().stream()
                     .filter(name -> !descriptor.replacedByTranslation(prefix, config, name))
@@ -168,6 +209,33 @@ public final class QuarkusPropertyTranslator {
             LOG.debug("Translation error details:", e);
             return null;
         }
+    }
+
+    /**
+     * Returns the forage properties of the {@code application-<profile>.properties} files, and the
+     * {@code %<profile>.forage.*} properties of {@code application.properties}, without the profile.
+     */
+    private static Set<String> profileKeys(File dir) throws IOException {
+        Set<String> keys = new HashSet<>();
+        File[] files = dir.listFiles((d, name) -> name.startsWith("application") && name.endsWith(".properties"));
+        if (files == null) {
+            return keys;
+        }
+        for (File file : files) {
+            Properties props = new Properties();
+            try (InputStream in = new FileInputStream(file)) {
+                props.load(in);
+            }
+            boolean profileFile = !file.getName().equals("application.properties");
+            for (String name : props.stringPropertyNames()) {
+                if (profileFile && name.startsWith("forage.")) {
+                    keys.add(name);
+                } else if (name.startsWith("%") && name.contains(".forage.")) {
+                    keys.add(name.substring(name.indexOf('.') + 1));
+                }
+            }
+        }
+        return keys;
     }
 
     @SuppressWarnings("rawtypes")

@@ -184,9 +184,9 @@ class ForagePluginRewriteTest {
     @Test
     void keptGroupStaysUnchanged() throws IOException {
         List<String> original = List.of(
-                "forage.jdbc.db.kind=postgresql",
-                "forage.jdbc.url=jdbc:postgresql://localhost:5432/mydb",
-                "forage.jdbc.transaction.enabled=true",
+                "forage.ds1.jdbc.db.kind=postgresql",
+                "forage.ds1.jdbc.url=jdbc:postgresql://localhost:5432/mydb",
+                "forage.ds1.jdbc.transaction.enabled=true",
                 "forage.ds2.jdbc.db.kind=mysql",
                 "forage.ds2.jdbc.url=jdbc:mysql://localhost/db2",
                 "forage.ds2.jdbc.username=user2",
@@ -205,7 +205,7 @@ class ForagePluginRewriteTest {
         assertThat(lines).containsSubsequence(original.subList(0, 3));
         assertThat(lines).noneMatch(l -> l.startsWith("forage.ds2."));
         assertThat(lines).contains("quarkus.datasource.\"ds2\".db-kind=mysql");
-        assertThat(lines).noneMatch(l -> l.startsWith("quarkus.datasource.\"dataSource\"."));
+        assertThat(lines).noneMatch(l -> l.startsWith("quarkus.datasource.\"ds1\"."));
     }
 
     @Test

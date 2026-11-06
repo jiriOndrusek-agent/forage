@@ -3,8 +3,10 @@ package io.kaoto.forage.plugin;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import io.kaoto.forage.core.util.config.ConfigStore;
@@ -248,6 +250,76 @@ class QuarkusPropertyTranslatorTest {
         }
 
         @Test
+        void defaultNextToNamedConfigurationsKeepsTheModule() throws IOException {
+            createPropertiesFile(
+                    "application.properties",
+                    "forage.jdbc.db.kind=postgresql",
+                    "forage.jdbc.url=jdbc:postgresql://localhost/legacy",
+                    "forage.jdbc.username=admin",
+                    "forage.jdbc.password=secret",
+                    "forage.ds1.jdbc.db.kind=postgresql",
+                    "forage.ds1.jdbc.url=jdbc:postgresql://localhost/db1",
+                    "forage.ds1.jdbc.username=user1",
+                    "forage.ds1.jdbc.password=pass1");
+
+            QuarkusPropertyTranslator.TranslationResult result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+
+            assertThat(result.isEmpty()).isTrue();
+            assertThat(result.warnings())
+                    .containsExactly("forage.jdbc.* and the named jdbc configurations kept unchanged: "
+                            + "Forage ignores forage.jdbc.* when named configurations exist");
+        }
+
+        @Test
+        void profileSpecificValuesKeepTheGroup() throws IOException {
+            createPropertiesFile(
+                    "application.properties",
+                    "forage.ds1.jdbc.db.kind=postgresql",
+                    "forage.ds1.jdbc.url=jdbc:postgresql://prod-db/db1",
+                    "forage.ds1.jdbc.username=user1",
+                    "forage.ds1.jdbc.password=pass1",
+                    "forage.ds2.jdbc.db.kind=mysql",
+                    "forage.ds2.jdbc.url=jdbc:mysql://localhost/db2",
+                    "forage.ds2.jdbc.username=user2",
+                    "forage.ds2.jdbc.password=pass2",
+                    "%prod.forage.ds2.jdbc.password=prod-pass2");
+            createPropertiesFile("application-dev.properties", "forage.ds1.jdbc.url=jdbc:postgresql://localhost/db1");
+
+            QuarkusPropertyTranslator.TranslationResult result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+
+            assertThat(result.isEmpty()).isTrue();
+            assertThat(result.warnings())
+                    .containsExactly(
+                            "forage.ds1.jdbc.* kept unchanged: profile-specific values for forage.ds1.jdbc.url",
+                            "forage.ds2.jdbc.* kept unchanged: profile-specific values for forage.ds2.jdbc.password");
+        }
+
+        @Test
+        void valuesFromOutsideTheExportKeepTheGroup() throws IOException {
+            Path configDir = Files.createDirectories(tempDir.resolve("config"));
+            Files.write(
+                    configDir.resolve("forage-datasource-factory.properties"), List.of("forage.jdbc.pool.max.size=99"));
+            createPropertiesFile(
+                    "application.properties",
+                    "forage.jdbc.db.kind=postgresql",
+                    "forage.jdbc.url=jdbc:postgresql://localhost:5432/mydb",
+                    "forage.jdbc.username=admin",
+                    "forage.jdbc.password=secret");
+            System.setProperty("forage.config.dir", configDir.toString());
+            try {
+                QuarkusPropertyTranslator.TranslationResult result =
+                        QuarkusPropertyTranslator.translate(tempDir.toFile());
+
+                assertThat(result.isEmpty()).isTrue();
+                assertThat(result.warnings())
+                        .containsExactly("forage.jdbc.* kept unchanged: forage.jdbc.pool.max.size set outside the "
+                                + "exported files");
+            } finally {
+                System.clearProperty("forage.config.dir");
+            }
+        }
+
+        @Test
         void defaultArtemisConnectionFactoryTranslated() throws IOException {
             createPropertiesFile(
                     "application.properties",
@@ -268,26 +340,34 @@ class QuarkusPropertyTranslatorTest {
         }
 
         @Test
-        void jmsConfigurationsTheRuntimeReadsAreKept() throws IOException {
+        void namedJmsConnectionFactoryKept() throws IOException {
+            // A named connection factory gets its own JMS component at runtime
             createPropertiesFile(
                     "application.properties",
-                    // a named connection factory gets its own JMS component at runtime
                     "forage.mq1.jms.kind=artemis",
-                    "forage.mq1.jms.broker.url=tcp://broker1:61616",
-                    // the Forage extension creates the IBM MQ connection factory
-                    "forage.jms.kind=ibmmq",
-                    "forage.jms.broker.url=localhost(1414)");
+                    "forage.mq1.jms.broker.url=tcp://broker1:61616");
 
             QuarkusPropertyTranslator.TranslationResult result = QuarkusPropertyTranslator.translate(tempDir.toFile());
 
             assertThat(result.isEmpty()).isTrue();
             assertThat(result.translatedForageKeys()).isEmpty();
             assertThat(result.warnings())
-                    .containsExactlyInAnyOrder(
-                            "forage.mq1.jms.* kept unchanged: no 1:1 Quarkus property for "
-                                    + "forage.mq1.jms.broker.url, forage.mq1.jms.kind",
-                            "forage.jms.* kept unchanged: no 1:1 Quarkus property for "
-                                    + "forage.jms.broker.url, forage.jms.kind");
+                    .containsExactly("forage.mq1.jms.* kept unchanged: no 1:1 Quarkus property for "
+                            + "forage.mq1.jms.broker.url, forage.mq1.jms.kind");
+        }
+
+        @Test
+        void ibmMqConnectionFactoryKept() throws IOException {
+            // The Forage extension creates the IBM MQ connection factory
+            createPropertiesFile(
+                    "application.properties", "forage.jms.kind=ibmmq", "forage.jms.broker.url=localhost(1414)");
+
+            QuarkusPropertyTranslator.TranslationResult result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+
+            assertThat(result.isEmpty()).isTrue();
+            assertThat(result.warnings())
+                    .containsExactly("forage.jms.* kept unchanged: no 1:1 Quarkus property for "
+                            + "forage.jms.broker.url, forage.jms.kind");
         }
 
         @Test
