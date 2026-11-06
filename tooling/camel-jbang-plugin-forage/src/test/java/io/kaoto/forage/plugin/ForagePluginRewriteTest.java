@@ -232,6 +232,48 @@ class ForagePluginRewriteTest {
         assertThat(lines).noneMatch(l -> l.contains("resolved-secret") || l.endsWith("=admin"));
     }
 
+    @Test
+    void translatedKeysRemovedFromOtherPropertiesFiles() throws IOException {
+        Path appProps = writeProps("camel.main.name=demo");
+        Path forageProps = tempDir.resolve("forage-datasource-factory.properties");
+        Files.write(
+                forageProps,
+                List.of(
+                        "# datasources",
+                        "forage.ds1.jdbc.db.kind=postgresql",
+                        "forage.ds1.jdbc.url=jdbc:postgresql://localhost/db1",
+                        "forage.ds1.jdbc.username=user1",
+                        "forage.ds1.jdbc.password=pass1",
+                        "forage.ds2.jdbc.db.kind=mysql",
+                        "forage.ds2.jdbc.url=jdbc:mysql://localhost/db2",
+                        "forage.ds2.jdbc.username=user2",
+                        "forage.ds2.jdbc.password=pass2",
+                        "forage.ds2.jdbc.transaction.enabled=true"));
+        Path otherProps = tempDir.resolve("messages.properties");
+        Files.write(otherProps, List.of("greeting=Hello"));
+
+        QuarkusPropertyTranslator.TranslationResult result;
+        try {
+            result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+        } finally {
+            ConfigStore.getInstance().reload();
+        }
+        ForagePlugin.rewriteApplicationProperties(appProps, result);
+
+        assertThat(Files.readAllLines(forageProps))
+                .containsExactly(
+                        "# datasources",
+                        "forage.ds2.jdbc.db.kind=mysql",
+                        "forage.ds2.jdbc.url=jdbc:mysql://localhost/db2",
+                        "forage.ds2.jdbc.username=user2",
+                        "forage.ds2.jdbc.password=pass2",
+                        "forage.ds2.jdbc.transaction.enabled=true");
+        assertThat(Files.readAllLines(appProps))
+                .contains("camel.main.name=demo", "quarkus.datasource.\"ds1\".db-kind=postgresql")
+                .noneMatch(l -> l.contains("\"ds2\""));
+        assertThat(Files.readAllLines(otherProps)).containsExactly("greeting=Hello");
+    }
+
     private Path writeProps(String... lines) throws IOException {
         Path path = tempDir.resolve("application.properties");
         Files.write(path, List.of(lines));

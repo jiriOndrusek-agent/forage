@@ -128,19 +128,37 @@ public class ForagePlugin implements Plugin {
 
     static void rewriteApplicationProperties(Path appPropsPath, QuarkusPropertyTranslator.TranslationResult result)
             throws IOException {
-        List<String> originalLines = Files.readAllLines(appPropsPath);
         Set<String> keysToRemove = result.translatedForageKeys();
 
+        // The other properties files (e.g. forage-datasource-factory.properties) are exported as they are
+        List<Path> otherFiles;
+        try (Stream<Path> files = Files.list(appPropsPath.getParent())) {
+            otherFiles = files.filter(f -> !f.equals(appPropsPath)
+                            && f.getFileName().toString().endsWith(".properties"))
+                    .toList();
+        }
+        for (Path file : otherFiles) {
+            List<String> lines = Files.readAllLines(file);
+            List<String> kept = withoutKeys(lines, keysToRemove).toList();
+            if (kept.size() != lines.size()) {
+                Files.write(file, kept);
+            }
+        }
+
         // Keep every line except those whose key was translated to Quarkus format
-        Stream<String> filtered = originalLines.stream().filter(line -> {
-            String key = extractPropertyKey(line);
-            return key == null || !keysToRemove.contains(key);
-        });
+        Stream<String> filtered = withoutKeys(Files.readAllLines(appPropsPath), keysToRemove);
 
         // Append each translation group with a header showing the original forage properties
         Stream<String> translated = result.groups().stream().flatMap(ForagePlugin::translationGroupToLines);
 
         Files.write(appPropsPath, Stream.concat(filtered, translated).toList());
+    }
+
+    private static Stream<String> withoutKeys(List<String> lines, Set<String> keysToRemove) {
+        return lines.stream().filter(line -> {
+            String key = extractPropertyKey(line);
+            return key == null || !keysToRemove.contains(key);
+        });
     }
 
     /**
