@@ -1,10 +1,13 @@
 package io.kaoto.forage.plugin;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
@@ -96,13 +99,15 @@ public class ForagePlugin implements Plugin {
             return;
         }
 
+        // The translation must never fail the export: the forage properties then stay as they are
+        Printer printer = new Printer.SystemOutPrinter();
         QuarkusPropertyTranslator.TranslationResult result;
         try {
             // Translate the exported properties files, which also hold the --property values of the export
             result =
                     QuarkusPropertyTranslator.translate(appPropsPath.getParent().toFile());
-        } catch (IOException e) {
-            LOG.warn("Failed to scan forage properties for Quarkus translation: {}", e.getMessage());
+        } catch (IOException | RuntimeException e) {
+            printer.println("⚠️  Quarkus export: forage properties not translated: " + e.getMessage());
             return;
         } finally {
             // translate() populates the global ConfigStore singleton via config.register() — clean up
@@ -110,7 +115,6 @@ public class ForagePlugin implements Plugin {
             ConfigStore.getInstance().reload();
         }
 
-        Printer printer = new Printer.SystemOutPrinter();
         result.warnings().forEach(warning -> printer.println("⚠️  Quarkus export: " + warning));
 
         if (result.isEmpty()) {
@@ -120,14 +124,17 @@ public class ForagePlugin implements Plugin {
         try {
             rewriteApplicationProperties(appPropsPath, result);
             LOG.info("Translated {} forage properties to Quarkus-native format", result.propertyCount());
-        } catch (IOException e) {
-            LOG.warn("Failed to rewrite application.properties: {}", e.getMessage());
+        } catch (IOException | RuntimeException e) {
+            printer.println("⚠️  Quarkus export: forage properties not translated: " + e.getMessage());
         }
     }
 
     static void rewriteApplicationProperties(Path appPropsPath, QuarkusPropertyTranslator.TranslationResult result)
             throws IOException {
         Set<String> keysToRemove = result.translatedForageKeys();
+        // Read and write as ISO-8859-1, which keeps the bytes of the other lines whatever the file encoding is.
+        // Every file is computed before any is written, so that a failure leaves the export unchanged.
+        Map<Path, List<String>> rewritten = new LinkedHashMap<>();
 
         // The other properties files (e.g. forage-datasource-factory.properties) are exported as they are
         List<Path> otherFiles;
@@ -139,20 +146,23 @@ public class ForagePlugin implements Plugin {
                     .toList();
         }
         for (Path file : otherFiles) {
-            List<String> lines = Files.readAllLines(file);
+            List<String> lines = Files.readAllLines(file, StandardCharsets.ISO_8859_1);
             List<String> kept = withoutKeys(lines, keysToRemove);
             if (kept.size() != lines.size()) {
-                Files.write(file, kept);
+                rewritten.put(file, kept);
             }
         }
 
-        // Keep every line except those whose key was translated to Quarkus format
-        Stream<String> filtered = withoutKeys(Files.readAllLines(appPropsPath), keysToRemove).stream();
+        // Keep every line except those whose key was translated to Quarkus format, and append each translation
+        // group with a header showing the original forage properties
+        List<String> appLines = new ArrayList<>(
+                withoutKeys(Files.readAllLines(appPropsPath, StandardCharsets.ISO_8859_1), keysToRemove));
+        result.groups().stream().flatMap(ForagePlugin::translationGroupToLines).forEach(appLines::add);
+        rewritten.put(appPropsPath, appLines);
 
-        // Append each translation group with a header showing the original forage properties
-        Stream<String> translated = result.groups().stream().flatMap(ForagePlugin::translationGroupToLines);
-
-        Files.write(appPropsPath, Stream.concat(filtered, translated).toList());
+        for (Map.Entry<Path, List<String>> file : rewritten.entrySet()) {
+            Files.write(file.getKey(), file.getValue(), StandardCharsets.ISO_8859_1);
+        }
     }
 
     /**
@@ -203,8 +213,7 @@ public class ForagePlugin implements Plugin {
     }
 
     /**
-     * Escapes a key or a value for a properties file, as {@link java.util.Properties#store} does, but keeps
-     * non-ASCII characters (Quarkus reads application.properties as UTF-8).
+     * Escapes a key or a value for a properties file, as {@link java.util.Properties#store} does.
      */
     private static String escape(String text, boolean key) {
         StringBuilder escaped = new StringBuilder(text.length());
@@ -218,7 +227,13 @@ public class ForagePlugin implements Plugin {
                 case '\f' -> escaped.append("\\f");
                 case ' ' -> escaped.append(key || i == 0 ? "\\ " : " ");
                 case '=', ':', '#', '!' -> escaped.append(key ? "\\" : "").append(c);
-                default -> escaped.append(c);
+                default -> {
+                    if (c < 0x20 || c > 0x7e) {
+                        escaped.append(String.format("\\u%04X", (int) c));
+                    } else {
+                        escaped.append(c);
+                    }
+                }
             }
         }
         return escaped.toString();
