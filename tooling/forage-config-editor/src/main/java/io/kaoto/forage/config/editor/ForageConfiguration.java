@@ -125,7 +125,13 @@ public final class ForageConfiguration {
         for (File file : files) {
             documents.put(file, source.load(file).orElseGet(() -> PropertiesDocument.of(List.of())));
         }
-        return new Resolver(new ForagePropertyParser(catalog), knownInstanceNames).resolve(documents);
+        // The beans selected in all the files decide which factory owns the keys of a bean name shared by several
+        Map<String, String> properties = new HashMap<>();
+        documents.values().forEach(document -> document.entries().stream()
+                .filter(line -> line.key().startsWith(FORAGE_PREFIX))
+                .forEach(line -> properties.put(line.key(), line.value())));
+        ForagePropertyParser parser = new ForagePropertyParser(catalog).withSelections(properties);
+        return new Resolver(parser, knownInstanceNames).resolve(documents);
     }
 
     /**

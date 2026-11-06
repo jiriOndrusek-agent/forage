@@ -1,0 +1,2 @@
+Forage creates Camel beans from properties.
+Forage supports plain Camel, Spring Boot and Quarkus.

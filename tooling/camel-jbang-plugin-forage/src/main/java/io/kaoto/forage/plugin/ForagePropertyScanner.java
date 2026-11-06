@@ -5,10 +5,13 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.stream.Stream;
 import io.kaoto.forage.catalog.reader.ForageCatalogReader;
 import io.kaoto.forage.config.editor.ForageConfigurationFiles;
 import io.kaoto.forage.config.editor.ForagePropertyParser;
@@ -79,38 +82,38 @@ public final class ForagePropertyScanner {
             File directory, ForageCatalogReader catalog, boolean trackUnknown) throws IOException {
 
         Map<String, Map<String, List<PropertyOccurrence>>> result = new HashMap<>();
-        ForagePropertyParser parser = new ForagePropertyParser(catalog);
 
         // Load application properties with profile override semantics (like Camel does):
         // scan base first, then profile file — profile occurrences replace base ones per property key
         File applicationPropsFile = ForageConfigurationFiles.applicationProperties(directory);
-        Properties baseProps = null;
-        if (applicationPropsFile != null) {
-            baseProps = new Properties();
-            try (FileInputStream fis = new FileInputStream(applicationPropsFile)) {
-                baseProps.load(fis);
-            }
-            collectForageProperties(baseProps, applicationPropsFile, parser, trackUnknown, result);
-        }
+        Properties baseProps = applicationPropsFile != null ? load(applicationPropsFile) : null;
 
         File profileFile = findProfileProperties(directory, baseProps);
-        if (profileFile != null) {
-            Properties profileProps = new Properties();
-            try (FileInputStream fis = new FileInputStream(profileFile)) {
-                profileProps.load(fis);
-            }
+        Properties profileProps = profileFile != null ? load(profileFile) : null;
+
+        // Load forage-specific and catalog-named properties files independently
+        Map<File, Properties> nonAppProps = new LinkedHashMap<>();
+        for (File file : ForageConfigurationFiles.forageProperties(directory, catalog)) {
+            nonAppProps.put(file, load(file));
+        }
+
+        // The beans selected in the project decide which factory owns the keys of a shared bean name
+        Map<String, String> allProps = new HashMap<>();
+        Stream.concat(Stream.of(baseProps, profileProps), nonAppProps.values().stream())
+                .filter(Objects::nonNull)
+                .forEach(
+                        props -> props.stringPropertyNames().forEach(key -> allProps.put(key, props.getProperty(key))));
+        ForagePropertyParser parser = new ForagePropertyParser(catalog).withSelections(allProps);
+
+        if (baseProps != null) {
+            collectForageProperties(baseProps, applicationPropsFile, parser, trackUnknown, result);
+        }
+        if (profileProps != null) {
             // Profile properties override base: replace matching occurrences
             overrideForageProperties(profileProps, profileFile, parser, trackUnknown, result);
         }
-
-        // Load forage-specific and catalog-named properties files independently
-        List<File> nonAppFiles = ForageConfigurationFiles.forageProperties(directory, catalog);
-        for (File file : nonAppFiles) {
-            Properties props = new Properties();
-            try (FileInputStream fis = new FileInputStream(file)) {
-                props.load(fis);
-            }
-            collectForageProperties(props, file, parser, trackUnknown, result);
+        for (Map.Entry<File, Properties> file : nonAppProps.entrySet()) {
+            collectForageProperties(file.getValue(), file.getKey(), parser, trackUnknown, result);
         }
 
         return result;
@@ -128,6 +131,14 @@ public final class ForagePropertyScanner {
     public static Map<String, Map<String, List<PropertyOccurrence>>> scanPropertiesWithFileTracking(
             File directory, ForageCatalogReader catalog) throws IOException {
         return scanPropertiesWithFileTracking(directory, catalog, true);
+    }
+
+    private static Properties load(File file) throws IOException {
+        Properties props = new Properties();
+        try (FileInputStream fis = new FileInputStream(file)) {
+            props.load(fis);
+        }
+        return props;
     }
 
     private static void collectForageProperties(

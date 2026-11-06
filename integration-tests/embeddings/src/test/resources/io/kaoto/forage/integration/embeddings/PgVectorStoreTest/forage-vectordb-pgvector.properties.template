@@ -1,0 +1,9 @@
+forage.pgvector.host={{pgvector.host}}
+forage.pgvector.port={{pgvector.port}}
+forage.pgvector.database=vectors
+forage.pgvector.user=test
+forage.pgvector.password=test
+forage.pgvector.table=forage_embeddings
+forage.pgvector.dimension={{pgvector.dimension}}
+forage.pgvector.create.table=true
+forage.pgvector.drop.table.first=true

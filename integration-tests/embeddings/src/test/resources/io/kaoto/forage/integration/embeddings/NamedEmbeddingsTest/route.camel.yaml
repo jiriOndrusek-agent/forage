@@ -1,0 +1,45 @@
+- route:
+    id: ingest-and-search
+    from:
+      uri: timer:embeddings
+      parameters:
+        repeatCount: 1
+        delay: 1000
+      steps:
+        - setBody:
+            constant: Forage creates Camel beans from properties
+        - to:
+            uri: direct:add
+        - setBody:
+            constant: Quarkus starts fast
+        - to:
+            uri: direct:add
+        - setBody:
+            constant: Which beans does Forage create?
+        - to:
+            uri: langchain4j-embeddings:embed
+            parameters:
+              embeddingModel: "#bean:docs"
+        - to:
+            uri: langchain4j-embeddingstore:notes
+            parameters:
+              action: SEARCH
+              embeddingStore: "#bean:notes"
+              maxResults: 1
+              returnTextContent: true
+        - log:
+            message: "Search result: ${body[0]}"
+- route:
+    id: add
+    from:
+      uri: direct:add
+      steps:
+        - to:
+            uri: langchain4j-embeddings:embed
+            parameters:
+              embeddingModel: "#bean:docs"
+        - to:
+            uri: langchain4j-embeddingstore:notes
+            parameters:
+              action: ADD
+              embeddingStore: "#bean:notes"

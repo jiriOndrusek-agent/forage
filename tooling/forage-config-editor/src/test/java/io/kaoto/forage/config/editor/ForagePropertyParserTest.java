@@ -1,6 +1,7 @@
 package io.kaoto.forage.config.editor;
 
 import java.util.List;
+import java.util.Map;
 import io.kaoto.forage.catalog.reader.ForageCatalogReader;
 import io.kaoto.forage.config.editor.ForagePropertyParser.ParsedProperty;
 
@@ -100,6 +101,30 @@ class ForagePropertyParserTest {
                 .isEqualTo(new ParsedProperty("jdbc", "ds1", null, "urll", "jdbc.urll"));
         assertThat(parser.parse("forage.nothing.known.here")).isEmpty();
         assertThat(parser.parse("camel.jbang.dependencies")).isEmpty();
+    }
+
+    @Test
+    void beanNamesSharedByFactories() {
+        // redis is an Agent memory and an Embedding Store: a key only the store declares is the store's
+        assertThat(parse("forage.redis.index.name").factoryType()).isEqualTo("vectordb");
+        assertThat(parse("forage.redis.host").factoryType()).isEqualTo("agent");
+        assertThat(parser.factoryOfBean("redis")).contains("agent");
+        // other keys go to the factory selecting the bean
+        ForagePropertyParser store = parser.withSelections(Map.of("forage.vectordb.kind", "redis"));
+        assertThat(store.parse("forage.redis.host").map(ParsedProperty::factoryType))
+                .contains("vectordb");
+        assertThat(store.factoryOfBean("redis")).contains("vectordb");
+    }
+
+    @Test
+    void keysAfterAFactoryKey() {
+        // An Agent key, not the embedding model kind of an instance named "agent"
+        assertThat(parse("forage.agent.embeddings.kind"))
+                .isEqualTo(new ParsedProperty("agent", null, null, "embeddings.kind", "agent.embeddings.kind"));
+        // Other keys after a factory key are those of an instance named like the factory
+        assertThat(parse("forage.embeddings.jdbc.url"))
+                .isEqualTo(new ParsedProperty("jdbc", "embeddings", null, "url", "jdbc.url"));
+        assertThat(parse("forage.docs.embeddings.kind").instanceName()).isEqualTo("docs");
     }
 
     private static List<String> selectedBeans(String key, String value) {

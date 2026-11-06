@@ -82,6 +82,7 @@ The `agent` parameter references a named bean configured via properties. In this
 
 #### Vector Databases
 - **forage-vectordb-default** - Core vector database functionality
+- **forage-embedding-store** - Embedding store beans (`forage.[<name>.]vectordb.kind`) with the providers below; Spring Boot: `forage-embedding-store-starter`, Quarkus: `forage-quarkus-embedding-store`
 - **forage-vectordb-chroma** - Chroma vector database provider
 - **forage-vectordb-infinispan** - Infinispan vector database provider
 - **forage-vectordb-mariadb** - MariaDB vector database provider
@@ -93,7 +94,8 @@ The `agent` parameter references a named bean configured via properties. In this
 - **forage-vectordb-weaviate** - Weaviate vector database prodiver
 
 #### Embeddings
-- **embeddings** - Embedding model providers (coming soon)
+- **forage-embedding-model** - Embedding model beans (`forage.[<name>.]embeddings.kind`); Spring Boot: `forage-embedding-model-starter`, Quarkus: `forage-quarkus-embedding-model`
+- **forage-model-embeddings-ollama** - Ollama embedding model provider
 
 ### InfluxDB Modules
 

@@ -1,9 +1,14 @@
 package io.kaoto.forage.config.editor;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import io.kaoto.forage.catalog.model.ConfigEntry;
@@ -36,9 +41,44 @@ public final class ForagePropertyParser {
     private static final Pattern FORAGE_PROPERTY_PATTERN = Pattern.compile("^forage\\.(.+)$");
 
     private final ForageCatalogReader catalog;
+    // bean name (lower case) -> factories whose bean-name entry selects it in the project
+    private final Map<String, Set<String>> selections;
 
     public ForagePropertyParser(ForageCatalogReader catalog) {
+        this(catalog, Map.of());
+    }
+
+    private ForagePropertyParser(ForageCatalogReader catalog, Map<String, Set<String>> selections) {
         this.catalog = catalog;
+        this.selections = selections;
+    }
+
+    /**
+     * Returns a parser that gives a key of a bean listed by several factories (e.g. {@code forage.redis.host}: Agent
+     * memory and Embedding Store) to the factories whose bean declares the key, then to the ones selecting the bean in
+     * the given properties (e.g. {@code forage.vectordb.kind=redis}), then to the first one.
+     *
+     * @param properties all the {@code forage.*} properties of the project, full key to value
+     * @return the parser
+     */
+    public ForagePropertyParser withSelections(Map<String, String> properties) {
+        Map<String, Set<String>> beanSelections = new HashMap<>();
+        properties.forEach((key, value) -> parse(key).ifPresent(parsed -> findBeanNameEntry(parsed)
+                .ifPresent(entry -> beanNames(entry, value).forEach(bean -> beanSelections
+                        .computeIfAbsent(bean.toLowerCase(Locale.ROOT), k -> new LinkedHashSet<>())
+                        .add(parsed.factoryType())))));
+        return new ForagePropertyParser(catalog, beanSelections);
+    }
+
+    /**
+     * The factory of a bean name listed by several factories: the ones selecting it (see
+     * {@link #withSelections(Map)}), then the first one.
+     *
+     * @param beanName the bean name (e.g. {@code redis})
+     * @return the factory type key, or empty if no factory lists the bean
+     */
+    public Optional<String> factoryOfBean(String beanName) {
+        return choose(catalog.findFactoryTypeKeysForBeanName(beanName), beanName, null);
     }
 
     /**
@@ -92,7 +132,7 @@ public final class ForagePropertyParser {
         while (true) {
             Optional<ForageCatalogReader.ConfigEntryOwner> owner =
                     catalog.findConfigEntryOwner(FORAGE_PREFIX + entryKey);
-            if (owner.isPresent()) {
+            if (owner.isPresent() && !keptByFactory(lastSegment(instanceName), entryKey)) {
                 candidates.add(toParsedProperty(instanceName, entryKey, owner.get()));
             }
             int dot = entryKey.indexOf('.');
@@ -144,13 +184,71 @@ public final class ForagePropertyParser {
         }
         Optional<ConfigEntry> beanNameEntry = findBeanNameEntry(parsed);
         if (beanNameEntry.isPresent()) {
-            return beanNameEntry.get().isMultiValue() ? PropertyKeys.splitValues(value) : List.of(value.trim());
+            return beanNames(beanNameEntry.get(), value);
         }
         String propertyName = parsed.propertyName();
         if (propertyName.equals(KIND_SEGMENT) || propertyName.endsWith("." + KIND_SEGMENT)) {
             return List.of(value.trim());
         }
         return List.of();
+    }
+
+    private static List<String> beanNames(ConfigEntry beanNameEntry, String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        return beanNameEntry.isMultiValue() ? PropertyKeys.splitValues(value) : List.of(value.trim());
+    }
+
+    private static String lastSegment(String instanceName) {
+        return instanceName == null ? null : instanceName.substring(instanceName.lastIndexOf('.') + 1);
+    }
+
+    /**
+     * Whether a key after a factory type key stays with that factory: a factory with keys besides its kind keeps the
+     * keys of a factory that only reads its kind, like an embedding model or store (e.g.
+     * {@code forage.agent.embeddings.kind} is an Agent key, not the embedding model kind of an instance named
+     * {@code agent}). Other keys are those of an instance named like the factory (e.g.
+     * {@code forage.embeddings.jdbc.url}, {@code forage.keycloak.jdbc.url}).
+     */
+    private boolean keptByFactory(String factoryTypeKey, String key) {
+        if (factoryTypeKey == null) {
+            return false;
+        }
+        String[] parts = key.split("\\.", 2);
+        return parts.length == 2
+                && catalog.getFactoryMetadata(factoryTypeKey)
+                        .filter(factory -> !factory.readsOnlyKind())
+                        .isPresent()
+                && catalog.getFactoryMetadata(parts[0])
+                        .filter(ForageCatalogReader.FactoryMetadata::readsOnlyKind)
+                        .isPresent();
+    }
+
+    /**
+     * Narrows the factories listing a bean (or declaring a key) to those whose bean declares the key, then to those
+     * selecting the bean, then takes the first.
+     */
+    private Optional<String> choose(List<String> factories, String beanName, String configEntryName) {
+        List<String> candidates = factories;
+        if (candidates.size() > 1 && configEntryName != null) {
+            List<String> declaring = catalog.findFactoryTypeKeysForConfigEntry(configEntryName);
+            candidates = narrow(candidates, declaring::contains);
+        }
+        if (candidates.size() > 1 && beanName != null) {
+            Set<String> selecting = selections.getOrDefault(beanName.toLowerCase(Locale.ROOT), Set.of());
+            candidates = narrow(candidates, selecting::contains);
+        }
+        return candidates.stream().findFirst();
+    }
+
+    private static List<String> narrow(List<String> candidates, Predicate<String> filter) {
+        List<String> narrowed = candidates.stream().filter(filter).toList();
+        return narrowed.isEmpty() ? candidates : narrowed;
+    }
+
+    private Optional<String> factoryOfBeanKey(String beanName, String beanKey) {
+        return choose(catalog.findFactoryTypeKeysForBeanName(beanName), beanName, FORAGE_PREFIX + beanKey);
     }
 
     private Optional<ConfigEntry> findBeanNameEntry(ParsedProperty parsed) {
@@ -167,7 +265,12 @@ public final class ForagePropertyParser {
 
     private ParsedProperty toParsedProperty(
             String instanceName, String entryKey, ForageCatalogReader.ConfigEntryOwner owner) {
-        String factoryTypeKey = owner.factoryTypeKey();
+        // A key of a bean listed by several factories goes to the factory selecting the bean
+        String factoryTypeKey = choose(
+                        catalog.findFactoryTypeKeysForConfigEntry(FORAGE_PREFIX + entryKey),
+                        owner.beanName(),
+                        FORAGE_PREFIX + entryKey)
+                .orElse(owner.factoryTypeKey());
         String factoryPrefix = factoryTypeKey + ".";
         // Factory-level property (e.g., "jdbc.url", "jms.artemis.reconnect.attempts"), unless the
         // factory key is really a bean prefix (e.g., the security policy factory keyed as "keycloak")
@@ -203,30 +306,38 @@ public final class ForagePropertyParser {
         String firstPart = parts[0];
         String restOfKey = parts[1];
 
-        // Default instance of a factory (e.g., "jdbc.url")
+        // Default instance of a factory (e.g., "jdbc.url"), unless the key names an instance of another factory
+        // (e.g., "embeddings.jdbc.urll"); see keptByFactory
+        String[] restParts = restOfKey.split("\\.", 2);
         if (catalog.getFactoryMetadata(firstPart).isPresent()) {
+            if (restParts.length == 2
+                    && catalog.getFactoryMetadata(restParts[0]).isPresent()
+                    && !keptByFactory(firstPart, restOfKey)) {
+                return new ParsedProperty(restParts[0], firstPart, null, restParts[1], restOfKey);
+            }
             return new ParsedProperty(firstPart, null, null, restOfKey, key);
         }
         // Default instance of a bean (e.g., "ollama.model.name")
-        Optional<String> beanFactory = catalog.findFactoryTypeKeyForBeanName(firstPart);
+        Optional<String> beanFactory = factoryOfBeanKey(firstPart, key);
         if (beanFactory.isPresent()) {
             return new ParsedProperty(beanFactory.get(), null, firstPart, restOfKey, key);
         }
 
         // Named instance: check the second segment for a factory or bean
-        String[] restParts = restOfKey.split("\\.", 2);
         String secondPart = restParts[0];
         String propertyName = restParts.length > 1 ? restParts[1] : "";
         if (catalog.getFactoryMetadata(secondPart).isPresent()) {
             return new ParsedProperty(secondPart, firstPart, null, propertyName, restOfKey);
         }
-        Optional<String> beanFactory2 = catalog.findFactoryTypeKeyForBeanName(secondPart);
+        Optional<String> beanFactory2 = factoryOfBeanKey(secondPart, restOfKey);
         if (beanFactory2.isPresent()) {
             return new ParsedProperty(beanFactory2.get(), firstPart, secondPart, propertyName, restOfKey);
         }
 
         // Bean-specific prefix mapped to a factory (e.g., "google.api.key")
-        return catalog.findFactoryTypeKeyForPropertyPrefix(firstPart)
+        return catalog.findBeanNameForPropertyPrefix(firstPart)
+                .flatMap(beanName -> factoryOfBeanKey(beanName, key))
+                .or(() -> catalog.findFactoryTypeKeyForPropertyPrefix(firstPart))
                 .map(factory -> new ParsedProperty(factory, null, null, key, key))
                 .orElse(null);
     }

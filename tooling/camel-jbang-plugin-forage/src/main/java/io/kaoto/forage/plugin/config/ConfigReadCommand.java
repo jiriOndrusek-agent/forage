@@ -107,6 +107,21 @@ public class ConfigReadCommand extends AbstractConfigCommand {
             instance.properties.put(parsed.propertyName(), entry.value());
         }
 
+        // The keys of the bean that an instance selects by kind belong to that instance
+        // (e.g. forage.vectordb.kind=redis with forage.redis.host)
+        instances.values().removeIf(instance -> {
+            if (instance.beanType == null) {
+                return false;
+            }
+            InstanceProperties selecting = instances.get(buildInstanceKey(
+                    new ParsedProperty(instance.factoryType, instance.instanceName, null, null, null)));
+            if (selecting == null || selecting == instance || !instance.beanType.equals(determineBeanKind(selecting))) {
+                return false;
+            }
+            instance.properties.forEach(selecting.properties::putIfAbsent);
+            return true;
+        });
+
         // Convert instances to BeanInfo
         List<BeanInfo> beans = new ArrayList<>();
         for (InstanceProperties instance : instances.values()) {
@@ -233,7 +248,8 @@ public class ConfigReadCommand extends AbstractConfigCommand {
     private String getFactoryJavaType(ForageCatalogReader.FactoryMetadata metadata, InstanceProperties instance) {
         // For beans with a specific bean type, look up the feature to determine the Java type
         if (instance.beanType != null) {
-            Optional<String> featureOpt = catalog.getBeanFeature(instance.beanType);
+            Optional<String> featureOpt = catalog.getBeanFeature(instance.factoryType, instance.beanType)
+                    .or(() -> catalog.getBeanFeature(instance.beanType));
             if (featureOpt.isPresent()) {
                 String feature = featureOpt.get();
                 // The feature key in beansByFeature indicates the Java type
@@ -263,6 +279,8 @@ public class ConfigReadCommand extends AbstractConfigCommand {
         return switch (feature) {
             case "Chat Model" -> "dev.langchain4j.model.chat.ChatModel";
             case "Memory" -> "dev.langchain4j.memory.ChatMemory";
+            case "Embeddings Model" -> "dev.langchain4j.model.embedding.EmbeddingModel";
+            case "Embedding Store" -> "dev.langchain4j.store.embedding.EmbeddingStore";
             case "javax.sql.DataSource" -> "javax.sql.DataSource";
             case "jakarta.jms.ConnectionFactory" -> "jakarta.jms.ConnectionFactory";
             default -> feature;

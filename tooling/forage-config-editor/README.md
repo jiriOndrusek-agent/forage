@@ -71,5 +71,11 @@ Only the last occurrence of a key in a file counts for the known names, since it
 an instance does not count its name as known: an ambiguous key goes to the instance the files show, so deleting a name
 no instance has never removes keys of the default instance.
 
+A bean name can be listed by several factories (e.g. `redis`: Agent memory and Embedding Store). Its key goes to the
+factory whose bean declares the key, then to the factory that selects the bean in the files
+(e.g. `forage.vectordb.kind=redis`), then to the first one. After a factory key, the key of a factory that only reads
+its kind stays with the first factory (`forage.agent.embeddings.kind` is an Agent key); other keys are those of an
+instance named like the factory (`forage.embeddings.jdbc.url`).
+
 `ForageConfigurationEditor.validateNewInstanceName` rejects the names that make keys ambiguous, so instances created
 through the editor never need the second pass.

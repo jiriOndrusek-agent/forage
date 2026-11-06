@@ -1,0 +1,2 @@
+forage.ollama.embedding.model.name=forage-test-model
+forage.ollama.embedding.model.base.url={{ollama.url}}

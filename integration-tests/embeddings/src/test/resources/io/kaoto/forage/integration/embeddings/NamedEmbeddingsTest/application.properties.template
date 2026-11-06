@@ -1,0 +1,8 @@
+forage.docs.embeddings.kind=ollama
+forage.docs.ollama.embedding.model.name=docs-model
+forage.docs.ollama.embedding.model.base.url={{ollama.url}}
+forage.faq.embeddings.kind=ollama
+forage.faq.ollama.embedding.model.name=faq-model
+forage.faq.ollama.embedding.model.base.url={{ollama.url}}
+forage.notes.vectordb.kind=in-memory-store
+forage.archive.vectordb.kind=in-memory-store

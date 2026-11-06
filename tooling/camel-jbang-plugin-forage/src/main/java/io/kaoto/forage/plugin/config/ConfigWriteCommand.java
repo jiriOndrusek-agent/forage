@@ -207,7 +207,12 @@ public class ConfigWriteCommand extends AbstractConfigCommand {
      * The properties are keyed as for the default instance, without the {@code forage.} prefix (e.g. "jdbc.url").
      */
     private Map<String, FactoryConfig> groupByFactory(Map<String, String> configMap) {
-        ForagePropertyParser parser = new ForagePropertyParser(catalog);
+        // The kinds selected in the input decide which factory owns a shared bean name, like config read
+        // and export (e.g. forage.vectordb.kind=redis)
+        Map<String, String> forageProperties = new HashMap<>();
+        configMap.forEach(
+                (key, value) -> forageProperties.put(FORAGE_PREFIX + catalog.normalizePropertyKey(key), value));
+        ForagePropertyParser parser = new ForagePropertyParser(catalog).withSelections(forageProperties);
         Map<String, FactoryConfig> factoryConfigs = new LinkedHashMap<>();
         // Track kind per factory type key
         Map<String, String> factoryKinds = new HashMap<>();
@@ -235,7 +240,7 @@ public class ConfigWriteCommand extends AbstractConfigCommand {
         // If kind is provided, find the factory type key for this bean type
         String kindFactoryTypeKey = null;
         if (globalKind != null) {
-            Optional<String> factoryTypeOpt = catalog.findFactoryTypeKeyForBeanName(globalKind);
+            Optional<String> factoryTypeOpt = parser.factoryOfBean(globalKind);
             if (factoryTypeOpt.isPresent()) {
                 kindFactoryTypeKey = factoryTypeOpt.get();
                 factoryKinds.put(kindFactoryTypeKey, globalKind);
