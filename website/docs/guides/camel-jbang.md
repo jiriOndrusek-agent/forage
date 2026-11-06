@@ -136,12 +136,16 @@ instead of their `forage.*` properties. A comment above each block lists the ori
 A configuration keeps its `forage.*` properties, which the Forage Quarkus extension handles at runtime, when:
 
 - a property has no 1:1 Quarkus equivalent, for example transactions, aggregation and idempotent repositories,
-  named or IBM MQ JMS connection factories. The export prints a warning naming the properties.
+  named or IBM MQ JMS connection factories.
 - a value uses a `{{...}}` placeholder, which Quarkus cannot resolve. `${...}` expressions are copied as they are.
-- an environment variable or system property overrides it during the export.
+- a value is profile-specific (`application-<profile>.properties`, `%<profile>.forage.*`), or comes from outside the
+  exported files: an environment variable, a system property or `~/.forage`.
+- it is the default configuration of a module that also has named ones.
 
-The other modules always keep their `forage.*` properties. Override translated values with Quarkus configuration,
-for example `QUARKUS_DATASOURCE__DS1__PASSWORD`, not with `FORAGE_*` variables.
+The export prints a warning for each of them. The other modules always keep their `forage.*` properties.
+
+Override translated values with Quarkus configuration, for example `QUARKUS_DATASOURCE__DS1__PASSWORD`, not with
+`FORAGE_*` variables: Forage would find an incomplete configuration and fail at startup.
 {% endraw %}
 
 ## Testing Connections
