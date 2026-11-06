@@ -140,6 +140,61 @@ class ForageCatalogReaderTest {
     }
 
     @Test
+    void testBeanNameSharedByTwoFactories() throws IOException {
+        String json =
+                """
+                {
+                  "factories": [
+                    {
+                      "name": "DataSource",
+                      "configEntries": [ { "name": "forage.jdbc.db.kind", "type": "bean-name" } ],
+                      "beansByFeature": [ { "feature": "javax.sql.DataSource", "beans": [ {
+                        "name": "mariadb",
+                        "gav": "io.kaoto.forage:forage-jdbc-mariadb:1.0",
+                        "runtimeDependencies": { "quarkus": [ "mvn:io.quarkus:quarkus-jdbc-mariadb" ] }
+                      } ] } ]
+                    },
+                    {
+                      "name": "Embedding Store",
+                      "configEntries": [ { "name": "forage.vectordb.kind", "type": "bean-name" } ],
+                      "beansByFeature": [ { "feature": "Embedding Store", "beans": [ {
+                        "name": "mariadb",
+                        "gav": "io.kaoto.forage:forage-vectordb-mariadb:1.0",
+                        "configEntries": [ { "name": "forage.mariadb.table", "type": "string" } ]
+                      } ] } ]
+                    }
+                  ]
+                }
+                """;
+        ForageCatalogReader shared =
+                ForageCatalogReader.fromInputStream(new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)));
+
+        // The first factory listing the name owns it
+        assertThat(shared.findFactoryTypeKeyForBeanName("mariadb")).hasValue("jdbc");
+        assertThat(shared.getBeanFeature("mariadb")).hasValue("javax.sql.DataSource");
+
+        // All of them, and the feature and keys of each
+        assertThat(shared.findFactoryTypeKeysForBeanName("MariaDB")).containsExactly("jdbc", "vectordb");
+        assertThat(shared.getBeanFeature("vectordb", "mariadb")).hasValue("Embedding Store");
+        assertThat(shared.getBeanFeature("jdbc", "mariadb")).hasValue("javax.sql.DataSource");
+        assertThat(shared.findFactoryTypeKeysForConfigEntry("forage.mariadb.table"))
+                .containsExactly("vectordb");
+        assertThat(shared.findFactoryTypeKeysForConfigEntry("forage.jdbc.db.kind"))
+                .containsExactly("jdbc");
+        assertThat(shared.findFactoryTypeKeysForConfigEntry("forage.unknown")).isEmpty();
+
+        assertThat(shared.getBeanGavs("mariadb"))
+                .containsExactlyInAnyOrder(
+                        "io.kaoto.forage:forage-jdbc-mariadb:1.0", "io.kaoto.forage:forage-vectordb-mariadb:1.0");
+        assertThat(shared.getBeanGavs("vectordb", "mariadb"))
+                .containsExactly("io.kaoto.forage:forage-vectordb-mariadb:1.0");
+        assertThat(shared.getBeanRuntimeDependencies("vectordb", "mariadb", "quarkus"))
+                .isEmpty();
+        assertThat(shared.getBeanRuntimeDependencies("jdbc", "mariadb", "quarkus"))
+                .containsExactly("mvn:io.quarkus:quarkus-jdbc-mariadb");
+    }
+
+    @Test
     void testGetBeanFeature() {
         Optional<String> feature = reader.getBeanFeature("postgresql");
         assertThat(feature).isPresent().hasValue("javax.sql.DataSource");
@@ -203,6 +258,40 @@ class ForageCatalogReaderTest {
         assertThat(metadata).isPresent();
         Optional<String> shortKey = metadata.get().getShortPrefixPropertyKey();
         assertThat(shortKey).isPresent().hasValue("jdbc.name");
+    }
+
+    @Test
+    void testReadsOnlyKind() throws IOException {
+        String json =
+                """
+                {
+                  "factories": [
+                    {
+                      "name": "Agent",
+                      "configEntries": [
+                        { "name": "forage.agent.model.kind", "type": "bean-name" },
+                        { "name": "forage.agent.features", "type": "String" }
+                      ]
+                    },
+                    {
+                      "name": "Embedding Model",
+                      "configEntries": [
+                        { "name": "forage.embeddings.kind", "type": "bean-name" },
+                        { "name": "forage.ollama.embedding.model.name", "type": "string" }
+                      ]
+                    }
+                  ]
+                }
+                """;
+        ForageCatalogReader catalog =
+                ForageCatalogReader.fromInputStream(new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)));
+
+        assertThat(catalog.getFactoryMetadata("embeddings").orElseThrow().readsOnlyKind())
+                .isTrue();
+        assertThat(catalog.getFactoryMetadata("agent").orElseThrow().readsOnlyKind())
+                .isFalse();
+        assertThat(reader.getFactoryMetadata("jdbc").orElseThrow().readsOnlyKind())
+                .isFalse();
     }
 
     @Test

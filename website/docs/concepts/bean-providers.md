@@ -58,8 +58,8 @@ Forage includes providers for several categories of beans:
 | **JMS** | Connection factories (`ConnectionFactory`) | `forage.<name>.jms.*` |
 | **AI Chat Models** | LLM clients (`ChatModel`) | `forage.<name>.agent.*` |
 | **Chat Memory** | Conversation storage | `forage.<name>.agent.memory.*` |
-| **Embeddings** | Text embedding models | `forage.<name>.agent.embeddings.*` |
-| **Vector Databases** | Embedding stores | `forage.<name>.agent.vector.*` |
+| **Embeddings** | Text embedding models (`EmbeddingModel`) | `forage.<name>.embeddings.*` |
+| **Vector Databases** | Embedding stores (`EmbeddingStore`) | `forage.<name>.vectordb.*` |
 
 Each category has multiple implementations. For example, JDBC supports PostgreSQL, MySQL, H2, and more. The `kind` or `model.kind` property selects the implementation:
 

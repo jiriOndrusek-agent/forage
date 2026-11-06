@@ -165,7 +165,7 @@ package io.kaoto.forage.vector.db.milvus;
 import io.kaoto.forage.core.vector.db.VectorDBProvider;
 import io.kaoto.forage.core.annotations.ForageBean;
 
-@ForageBean(value = "milvus", components = {"camel-langchain4j-embeddings"}, description = "Milvus vector database provider")
+@ForageBean(value = "milvus", components = {"camel-langchain4j-embeddingstore"}, description = "Milvus vector database provider")
 public class MilvusProvider implements VectorDBProvider {
     
     @Override
@@ -366,17 +366,17 @@ For multi-instance setups using named configurations:
 # Environment variables (prefix becomes uppercase)
 export FORAGE_MILVUS_HOST="default.milvus.com"           # Default config
 export forage.vectorstore.milvus.host="vs.milvus.com"   # "vectorstore" config
-export forage.embeddings.milvus.host="emb.milvus.com"   # "embeddings" config
+export forage.archive.milvus.host="arc.milvus.com"      # "archive" config
 
 # System properties
 -Dforage.milvus.host=default.milvus.com                  # Default config
 -Dforage.vectorstore.milvus.host=vs.milvus.com          # "vectorstore" config
--Dforage.embeddings.milvus.host=emb.milvus.com          # "embeddings" config
+-Dforage.archive.milvus.host=arc.milvus.com             # "archive" config
 ```
 
 In your provider code:
 ```java
-@ForageBean(value = "milvus-multi", components = {"camel-langchain4j-embeddings"}, description = "Multi-instance Milvus vector database provider")
+@ForageBean(value = "milvus-multi", components = {"camel-langchain4j-embeddingstore"}, description = "Multi-instance Milvus vector database provider")
 public class MultiInstanceMilvusProvider implements VectorDBProvider {
     @Override
     public VectorDatabase create(String id) {

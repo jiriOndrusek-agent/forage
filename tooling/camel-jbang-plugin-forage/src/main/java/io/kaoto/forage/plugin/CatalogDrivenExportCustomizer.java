@@ -79,14 +79,15 @@ public class CatalogDrivenExportCustomizer implements ExportCustomizer {
                                     beanKinds = Set.of(entry.getDefaultValue());
                                 }
                                 for (String kind : beanKinds) {
-                                    // Add bean GAVs
-                                    Collection<String> beanGavs = catalog.getBeanGavs(kind);
+                                    // Add the GAVs of this factory's beans; other factories may share the name
+                                    Collection<String> beanGavs = catalog.getBeanGavs(factoryTypeKey, kind);
                                     beanGavs.stream()
                                             .map(CatalogDrivenExportCustomizer::toMvnGav)
                                             .forEach(dependencies::add);
 
                                     // Add bean runtime dependencies for this variant
-                                    List<String> beanDeps = catalog.getBeanRuntimeDependencies(kind, variantName);
+                                    List<String> beanDeps =
+                                            catalog.getBeanRuntimeDependencies(factoryTypeKey, kind, variantName);
                                     beanDeps.stream()
                                             .map(CatalogDrivenExportCustomizer::toMvnGav)
                                             .forEach(dependencies::add);
