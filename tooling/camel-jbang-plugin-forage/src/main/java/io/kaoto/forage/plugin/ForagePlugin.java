@@ -1,6 +1,5 @@
 package io.kaoto.forage.plugin;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -88,7 +87,7 @@ public class ForagePlugin implements Plugin {
         });
     }
 
-    private static void translateForageProperties(Path buildDir) {
+    static void translateForageProperties(Path buildDir) {
         // Also called by the silent run that precedes the export, when the build directory does not exist yet
         Path appPropsPath = buildDir.resolve("src/main/resources/application.properties");
         if (!Files.exists(appPropsPath)) {
@@ -96,12 +95,11 @@ public class ForagePlugin implements Plugin {
             return;
         }
 
-        String configDir = System.getProperty("forage.config.dir");
-        File workingDir = configDir != null ? new File(configDir) : new File(System.getProperty("user.dir"));
-
         QuarkusPropertyTranslator.TranslationResult result;
         try {
-            result = QuarkusPropertyTranslator.translate(workingDir);
+            // Translate the exported properties files, which also hold the --property values of the export
+            result =
+                    QuarkusPropertyTranslator.translate(appPropsPath.getParent().toFile());
         } catch (IOException e) {
             LOG.warn("Failed to scan forage properties for Quarkus translation: {}", e.getMessage());
             return;

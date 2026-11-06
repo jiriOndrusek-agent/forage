@@ -274,6 +274,50 @@ class ForagePluginRewriteTest {
         assertThat(Files.readAllLines(otherProps)).containsExactly("greeting=Hello");
     }
 
+    @Test
+    void exportedPropertiesAreTranslated() throws IOException {
+        // camel export writes --property values into the exported application.properties only
+        Path resources = Files.createDirectories(tempDir.resolve("src/main/resources"));
+        Path appProps = resources.resolve("application.properties");
+        Files.write(
+                appProps,
+                List.of(
+                        "forage.jdbc.db.kind=postgresql",
+                        "forage.jdbc.url=jdbc:postgresql://localhost:5432/mydb",
+                        "forage.jdbc.username=admin",
+                        "forage.jdbc.password=secret",
+                        "forage.jdbc.pool.max.size=50"));
+
+        ForagePlugin.translateForageProperties(tempDir);
+
+        List<String> lines = Files.readAllLines(appProps);
+        assertThat(lines).noneMatch(l -> l.startsWith("forage."));
+        assertThat(lines).contains("quarkus.datasource.\"dataSource\".jdbc.max-size=50");
+    }
+
+    @Test
+    void applicationPropertiesOverrideForageFiles() throws IOException {
+        Path appProps = writeProps("forage.ds1.jdbc.url=jdbc:postgresql://from-application/db");
+        Files.write(
+                tempDir.resolve("forage-datasource-factory.properties"),
+                List.of(
+                        "forage.ds1.jdbc.db.kind=postgresql",
+                        "forage.ds1.jdbc.url=jdbc:postgresql://from-forage-file/db",
+                        "forage.ds1.jdbc.username=user1",
+                        "forage.ds1.jdbc.password=pass1"));
+
+        QuarkusPropertyTranslator.TranslationResult result;
+        try {
+            result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+        } finally {
+            ConfigStore.getInstance().reload();
+        }
+        ForagePlugin.rewriteApplicationProperties(appProps, result);
+
+        assertThat(Files.readAllLines(appProps))
+                .contains("quarkus.datasource.\"ds1\".jdbc.url=jdbc:postgresql://from-application/db");
+    }
+
     private Path writeProps(String... lines) throws IOException {
         Path path = tempDir.resolve("application.properties");
         Files.write(path, List.of(lines));
