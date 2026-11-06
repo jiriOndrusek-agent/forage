@@ -11,7 +11,6 @@ import org.apache.camel.spi.CamelEvent;
 import org.apache.camel.support.SimpleEventNotifierSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import io.kaoto.forage.core.util.config.ConfigHelper;
 import io.kaoto.forage.core.util.config.ConfigStore;
 
 /**
@@ -60,13 +59,12 @@ public abstract class AbstractClientBeanFactory<T extends AutoCloseable> impleme
     @Override
     public synchronized void configure() {
         var config = descriptor.createConfig(null);
-        Set<String> prefixes = ConfigStore.getInstance()
-                .readPrefixes(config, ConfigHelper.getNamedPropertyRegexp(descriptor.modulePrefix()));
+        Set<String> prefixes = ConfigStore.getInstance().readPrefixes(config, descriptor.namedPropertyRegexp());
         Map<String, String> names = new LinkedHashMap<>();
         if (!prefixes.isEmpty()) {
             prefixes.stream().sorted().forEach(name -> names.put(name, name));
         } else if (!ConfigStore.getInstance()
-                .readPrefixes(config, ConfigHelper.getDefaultPropertyRegexp(descriptor.modulePrefix()))
+                .readPrefixes(config, descriptor.defaultPropertyRegexp())
                 .isEmpty()) {
             names.put(descriptor.defaultBeanName(), null);
         }

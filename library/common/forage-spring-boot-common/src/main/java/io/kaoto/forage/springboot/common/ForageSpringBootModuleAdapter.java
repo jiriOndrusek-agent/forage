@@ -17,7 +17,6 @@ import io.kaoto.forage.core.common.BeanProvider;
 import io.kaoto.forage.core.common.ForageModuleDescriptor;
 import io.kaoto.forage.core.common.ServiceLoaderHelper;
 import io.kaoto.forage.core.util.config.Config;
-import io.kaoto.forage.core.util.config.ConfigHelper;
 import io.kaoto.forage.core.util.config.ConfigStore;
 
 /**
@@ -100,27 +99,24 @@ public class ForageSpringBootModuleAdapter<C extends Config, P extends BeanProvi
     }
 
     private boolean hasDefaultProperties() {
-        if (SpringPropertyHelper.hasProperties(
-                environment, ConfigHelper.getDefaultPropertyRegexp(descriptor.modulePrefix()))) {
+        if (SpringPropertyHelper.hasProperties(environment, descriptor.defaultPropertyRegexp())) {
             return true;
         }
         // Also check ConfigStore (covers forage-*.properties files not loaded into Spring Environment)
         C defaultConfig = descriptor.createConfig(null);
         return !ConfigStore.getInstance()
-                .readPrefixes(defaultConfig, ConfigHelper.getDefaultPropertyRegexp(descriptor.modulePrefix()))
+                .readPrefixes(defaultConfig, descriptor.defaultPropertyRegexp())
                 .isEmpty();
     }
 
     private Set<String> discoverPrefixes() {
-        Set<String> prefixes = SpringPropertyHelper.discoverPrefixes(
-                environment, ConfigHelper.getNamedPropertyRegexp(descriptor.modulePrefix()));
+        Set<String> prefixes = SpringPropertyHelper.discoverPrefixes(environment, descriptor.namedPropertyRegexp());
         if (!prefixes.isEmpty()) {
             return prefixes;
         }
         // Also check ConfigStore (covers forage-*.properties files not loaded into Spring Environment)
         C defaultConfig = descriptor.createConfig(null);
-        return ConfigStore.getInstance()
-                .readPrefixes(defaultConfig, ConfigHelper.getNamedPropertyRegexp(descriptor.modulePrefix()));
+        return ConfigStore.getInstance().readPrefixes(defaultConfig, descriptor.namedPropertyRegexp());
     }
 
     private void registerBeans(BeanDefinitionRegistry registry, Set<String> prefixes) {
