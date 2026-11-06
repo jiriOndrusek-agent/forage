@@ -110,7 +110,6 @@ class QuarkusPropertyTranslatorTest {
         void namedJdbcInstancesTranslated() throws IOException {
             createPropertiesFile(
                     "application.properties",
-                    "forage.jdbc.name=ds1,ds2",
                     "forage.ds1.jdbc.db.kind=postgresql",
                     "forage.ds1.jdbc.url=jdbc:postgresql://localhost/db1",
                     "forage.ds1.jdbc.username=user1",
@@ -135,42 +134,149 @@ class QuarkusPropertyTranslatorTest {
         }
 
         @Test
-        void ollamaAgentPropertiesTranslated() throws IOException {
+        void jdbcDriverPropertiesTranslated() throws IOException {
+            createPropertiesFile(
+                    "application.properties",
+                    "forage.jdbc.db.kind=oracle",
+                    "forage.jdbc.url=jdbc:oracle:thin:@localhost:1521/db",
+                    "forage.jdbc.username=admin",
+                    "forage.jdbc.password=secret",
+                    "forage.jdbc.properties.oracle.jdbc.ReadTimeout=5000");
+
+            QuarkusPropertyTranslator.TranslationResult result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+
+            assertThat(flattenGroups(result))
+                    .containsEntry(
+                            "quarkus.datasource.\"dataSource\".jdbc.additional-jdbc-properties.\"oracle.jdbc.ReadTimeout\"",
+                            "5000");
+            assertThat(result.translatedForageKeys()).contains("forage.jdbc.properties.oracle.jdbc.ReadTimeout");
+            assertThat(result.warnings()).isEmpty();
+        }
+
+        @Test
+        void jdbcAuxiliaryBeanAndTransactionPropertiesKeepTheGroup() throws IOException {
+            createPropertiesFile(
+                    "application.properties",
+                    "forage.ds1.jdbc.db.kind=postgresql",
+                    "forage.ds1.jdbc.url=jdbc:postgresql://localhost/db1",
+                    "forage.ds1.jdbc.username=user1",
+                    "forage.ds1.jdbc.password=pass1",
+                    "forage.ds1.jdbc.transaction.enabled=true",
+                    "forage.ds1.jdbc.aggregation.repository.name=myAggregation",
+                    "forage.ds1.jdbc.idempotent.repository.enabled=true",
+                    "forage.ds2.jdbc.db.kind=mysql",
+                    "forage.ds2.jdbc.url=jdbc:mysql://localhost/db2",
+                    "forage.ds2.jdbc.username=user2",
+                    "forage.ds2.jdbc.password=pass2");
+
+            QuarkusPropertyTranslator.TranslationResult result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+
+            assertThat(result.groups())
+                    .extracting(QuarkusPropertyTranslator.TranslationGroup::prefix)
+                    .containsExactly("ds2");
+            assertThat(result.translatedForageKeys()).noneMatch(key -> key.startsWith("forage.ds1."));
+            assertThat(flattenGroups(result).keySet()).noneMatch(key -> key.contains("\"ds1\""));
+            assertThat(result.warnings())
+                    .containsExactly("forage.ds1.jdbc.* kept unchanged: no 1:1 Quarkus property for "
+                            + "forage.ds1.jdbc.aggregation.repository.name, forage.ds1.jdbc.idempotent.repository.enabled, "
+                            + "forage.ds1.jdbc.transaction.enabled");
+        }
+
+        @Test
+        void defaultArtemisConnectionFactoryTranslated() throws IOException {
+            createPropertiesFile(
+                    "application.properties",
+                    "forage.jms.kind=artemis",
+                    "forage.jms.broker.url=tcp://localhost:61616",
+                    "forage.jms.username=admin",
+                    "forage.jms.password=secret",
+                    "forage.jms.pool.max.connections=5");
+
+            QuarkusPropertyTranslator.TranslationResult result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+
+            Map<String, String> qProps = flattenGroups(result);
+            assertThat(qProps).containsEntry("quarkus.artemis.url", "tcp://localhost:61616");
+            assertThat(qProps).containsEntry("quarkus.artemis.username", "admin");
+            assertThat(qProps).containsEntry("quarkus.artemis.password", "secret");
+            assertThat(qProps).containsEntry("quarkus.pooled-jms.max-connections", "5");
+            assertThat(result.warnings()).isEmpty();
+        }
+
+        @Test
+        void jmsConfigurationsTheRuntimeReadsAreKept() throws IOException {
+            createPropertiesFile(
+                    "application.properties",
+                    // a named connection factory gets its own JMS component at runtime
+                    "forage.mq1.jms.kind=artemis",
+                    "forage.mq1.jms.broker.url=tcp://broker1:61616",
+                    // the Forage extension creates the IBM MQ connection factory
+                    "forage.jms.kind=ibmmq",
+                    "forage.jms.broker.url=localhost(1414)");
+
+            QuarkusPropertyTranslator.TranslationResult result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+
+            assertThat(result.isEmpty()).isTrue();
+            assertThat(result.translatedForageKeys()).isEmpty();
+            assertThat(result.warnings())
+                    .containsExactlyInAnyOrder(
+                            "forage.mq1.jms.* kept unchanged: no 1:1 Quarkus property for "
+                                    + "forage.mq1.jms.broker.url, forage.mq1.jms.kind",
+                            "forage.jms.* kept unchanged: no 1:1 Quarkus property for "
+                                    + "forage.jms.broker.url, forage.jms.kind");
+        }
+
+        @Test
+        void transactedJmsConnectionFactoryKept() throws IOException {
+            createPropertiesFile(
+                    "application.properties",
+                    "forage.jms.kind=artemis",
+                    "forage.jms.broker.url=tcp://localhost:61616",
+                    "forage.jms.transaction.enabled=true");
+
+            QuarkusPropertyTranslator.TranslationResult result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+
+            assertThat(result.isEmpty()).isTrue();
+            assertThat(result.warnings())
+                    .containsExactly("forage.jms.* kept unchanged: no 1:1 Quarkus property for "
+                            + "forage.jms.transaction.enabled");
+        }
+
+        @Test
+        void failingTranslationKeepsTheGroup() throws IOException {
+            // forage.jms.kind is required
+            createPropertiesFile("application.properties", "forage.jms.broker.url=tcp://localhost:61616");
+
+            QuarkusPropertyTranslator.TranslationResult result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+
+            assertThat(result.isEmpty()).isTrue();
+            assertThat(result.warnings())
+                    .containsExactly("forage.jms.* kept unchanged: JMS kind is required but not configured");
+        }
+
+        @Test
+        void modulesWithoutQuarkusMappingAreLeftAlone() throws IOException {
             createPropertiesFile(
                     "application.properties",
                     "forage.agent.model.kind=ollama",
                     "forage.agent.base.url=http://localhost:11434",
-                    "forage.agent.model.name=llama3");
+                    "forage.agent.model.name=llama3",
+                    "forage.cxf.kind=soap",
+                    "forage.cxf.address=/hello",
+                    "forage.rabbitmq.host=localhost",
+                    "forage.influxdb.url=http://localhost:8086",
+                    "forage.influxdb2.url=http://localhost:8087",
+                    "forage.influxdb2.token=token",
+                    "forage.tls.keystore.path=classpath:keystore.p12",
+                    "forage.shiro.ini.resource.path=classpath:shiro.ini",
+                    "forage.keycloak.server.url=http://localhost:8180",
+                    "forage.route.policy.enabled=true",
+                    "forage.tavily.api.key=key");
 
             QuarkusPropertyTranslator.TranslationResult result = QuarkusPropertyTranslator.translate(tempDir.toFile());
 
-            assertThat(result.isEmpty()).isFalse();
-            Map<String, String> qProps = flattenGroups(result);
-            assertThat(qProps).containsEntry("quarkus.langchain4j.ollama.base-url", "http://localhost:11434");
-            assertThat(qProps).containsEntry("quarkus.langchain4j.ollama.chat-model.model-id", "llama3");
-
-            assertThat(result.groups())
-                    .extracting(QuarkusPropertyTranslator.TranslationGroup::moduleType)
-                    .containsOnly("agent");
-        }
-
-        @Test
-        void anthropicAgentPropertiesTranslated() throws IOException {
-            createPropertiesFile(
-                    "application.properties",
-                    "forage.agent.model.kind=anthropic",
-                    "forage.agent.api.key=sk-test-key",
-                    "forage.agent.model.name=claude-sonnet-4-20250514",
-                    "forage.agent.temperature=0.7");
-
-            QuarkusPropertyTranslator.TranslationResult result = QuarkusPropertyTranslator.translate(tempDir.toFile());
-
-            assertThat(result.isEmpty()).isFalse();
-            Map<String, String> qProps = flattenGroups(result);
-            assertThat(qProps).containsEntry("quarkus.langchain4j.anthropic.api-key", "sk-test-key");
-            assertThat(qProps)
-                    .containsEntry("quarkus.langchain4j.anthropic.chat-model.model-name", "claude-sonnet-4-20250514");
-            assertThat(qProps).containsEntry("quarkus.langchain4j.anthropic.chat-model.temperature", "0.7");
+            assertThat(result.isEmpty()).isTrue();
+            assertThat(result.translatedForageKeys()).isEmpty();
+            assertThat(result.warnings()).isEmpty();
         }
 
         @Test

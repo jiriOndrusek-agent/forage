@@ -3,6 +3,7 @@ package io.kaoto.forage.plugin;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -10,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.Set;
+import java.util.TreeMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.kaoto.forage.catalog.reader.ForageCatalogReader;
@@ -20,8 +22,17 @@ import io.kaoto.forage.plugin.ForagePropertyScanner.PropertyOccurrence;
 
 /**
  * Translates forage properties to Quarkus-native properties at export time.
- * Uses existing {@link ForageModuleDescriptor#translatePropertiesForExport} logic
+ * Uses the {@link ForageModuleDescriptor#translateProperties} logic of the Forage Quarkus extensions
  * by populating {@link ConfigStore} with scanned property values.
+ *
+ * <p>Only modules whose Quarkus extension creates the bean from {@code quarkus.*} properties are translated:
+ * JDBC (Agroal) and JMS (Artemis), whose descriptors are registered as {@link ServiceLoader} services. Forage
+ * creates the beans of the other modules (agent, CXF, Spring RabbitMQ, InfluxDB, TLS, security and route
+ * policies, web search) from their {@code forage.*} properties at runtime, so these stay unchanged.
+ *
+ * <p>A configuration (module and named prefix) is translated only when the translation replaces all its
+ * properties (see {@link ForageModuleDescriptor#replacedByTranslation}). Otherwise it stays unchanged, with a
+ * warning naming the properties that have no 1:1 Quarkus equivalent.
  */
 public final class QuarkusPropertyTranslator {
 
@@ -32,7 +43,8 @@ public final class QuarkusPropertyTranslator {
     public record TranslationGroup(
             String moduleType, String prefix, Map<String, String> sourceProperties, Map<String, String> properties) {}
 
-    public record TranslationResult(List<TranslationGroup> groups, Set<String> translatedForageKeys) {
+    public record TranslationResult(
+            List<TranslationGroup> groups, Set<String> translatedForageKeys, List<String> warnings) {
 
         public boolean isEmpty() {
             return groups.isEmpty();
@@ -47,7 +59,8 @@ public final class QuarkusPropertyTranslator {
      * Translates forage properties found in the working directory to Quarkus-native properties.
      *
      * @param workingDir the directory containing route and properties files
-     * @return translation result with quarkus properties and the forage keys that were translated
+     * @return translation result with quarkus properties, the forage keys that were translated and the warnings
+     *         for the configurations kept unchanged
      */
     @SuppressWarnings("rawtypes")
     public static TranslationResult translate(File workingDir) throws IOException {
@@ -56,21 +69,21 @@ public final class QuarkusPropertyTranslator {
         Map<String, Map<String, List<PropertyOccurrence>>> scanned =
                 ForagePropertyScanner.scanPropertiesWithFileTracking(workingDir, catalog, false);
 
-        // 2. Discover available module descriptors (jdbc, agent, jms, ...) via ServiceLoader
+        // 2. Discover the module descriptors of the translated modules (jdbc, jms) via ServiceLoader
         Map<String, ForageModuleDescriptor> descriptors = discoverDescriptors();
 
-        // 3. For each module type, group its properties by named prefix and translate
+        // 3. For each translated module, group its properties by named prefix and translate
         List<TranslationGroup> groups = new ArrayList<>();
         Set<String> translatedForageKeys = new LinkedHashSet<>();
+        List<String> warnings = new ArrayList<>();
 
-        for (Map.Entry<String, Map<String, List<PropertyOccurrence>>> factoryEntry : scanned.entrySet()) {
+        for (Map.Entry<String, Map<String, List<PropertyOccurrence>>> factoryEntry :
+                new TreeMap<>(scanned).entrySet()) {
             String factoryTypeKey = factoryEntry.getKey();
 
             ForageModuleDescriptor descriptor = descriptors.get(factoryTypeKey);
             if (descriptor == null) {
-                LOG.warn(
-                        "No ForageModuleDescriptor for factory type '{}' — properties will not be translated to Quarkus format",
-                        factoryTypeKey);
+                LOG.debug("No Quarkus translation for factory type '{}' — properties kept unchanged", factoryTypeKey);
                 continue;
             }
 
@@ -82,7 +95,7 @@ public final class QuarkusPropertyTranslator {
                 String prefix = prefixEntry.getKey();
                 Map<String, String> props = prefixEntry.getValue();
 
-                TranslationGroup group = translatePrefixGroup(descriptor, factoryTypeKey, prefix, props);
+                TranslationGroup group = translatePrefixGroup(descriptor, prefix, props, warnings);
                 if (group != null) {
                     groups.add(group);
                     translatedForageKeys.addAll(props.keySet());
@@ -90,31 +103,39 @@ public final class QuarkusPropertyTranslator {
             }
         }
 
-        return new TranslationResult(groups, translatedForageKeys);
+        return new TranslationResult(groups, translatedForageKeys, warnings);
     }
 
     /**
      * Translates a single prefix group's forage properties to Quarkus-native format.
-     * Returns {@code null} if translation produces no output or fails.
+     * Returns {@code null}, and adds a warning, if the group is kept unchanged.
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static TranslationGroup translatePrefixGroup(
-            ForageModuleDescriptor descriptor, String factoryTypeKey, String prefix, Map<String, String> props) {
+            ForageModuleDescriptor descriptor, String prefix, Map<String, String> props, List<String> warnings) {
+        String group = prefix == null
+                ? "forage." + descriptor.modulePrefix() + ".*"
+                : "forage." + prefix + "." + descriptor.modulePrefix() + ".*";
         try {
             Config config = descriptor.createConfig(prefix);
             props.forEach(config::register);
 
-            Map<String, String> translated = descriptor.translatePropertiesForExport(prefix, config);
+            List<String> notReplaced = props.keySet().stream()
+                    .filter(name -> !descriptor.replacedByTranslation(prefix, config, name))
+                    .sorted()
+                    .toList();
+            if (!notReplaced.isEmpty()) {
+                warnings.add(group + " kept unchanged: no 1:1 Quarkus property for " + String.join(", ", notReplaced));
+                return null;
+            }
+
+            Map<String, String> translated = descriptor.translateProperties(prefix, config);
             if (translated.isEmpty()) {
                 return null;
             }
             return new TranslationGroup(descriptor.modulePrefix(), prefix, props, translated);
         } catch (Exception e) {
-            LOG.warn(
-                    "Failed to translate properties for module '{}' prefix '{}': {}",
-                    factoryTypeKey,
-                    prefix,
-                    e.getMessage());
+            warnings.add(group + " kept unchanged: " + e.getMessage());
             LOG.debug("Translation error details:", e);
             return null;
         }
@@ -153,7 +174,7 @@ public final class QuarkusPropertyTranslator {
      */
     private static Map<String, Map<String, String>> groupByPrefix(
             Map<String, List<PropertyOccurrence>> factoryProperties, String modulePrefix) {
-        Map<String, Map<String, String>> result = new LinkedHashMap<>();
+        Map<String, Map<String, String>> result = new TreeMap<>(Comparator.nullsFirst(Comparator.naturalOrder()));
 
         for (List<PropertyOccurrence> occurrences : factoryProperties.values()) {
             for (PropertyOccurrence occ : occurrences) {

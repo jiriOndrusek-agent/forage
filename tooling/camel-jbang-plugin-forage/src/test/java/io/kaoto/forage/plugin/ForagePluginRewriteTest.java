@@ -8,6 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import io.kaoto.forage.core.util.config.ConfigStore;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -180,6 +181,33 @@ class ForagePluginRewriteTest {
         assertThat(lines).noneMatch(l -> l.equals("forage.jdbc.db.kind=postgresql"));
     }
 
+    @Test
+    void keptGroupStaysUnchanged() throws IOException {
+        List<String> original = List.of(
+                "forage.jdbc.db.kind=postgresql",
+                "forage.jdbc.url=jdbc:postgresql://localhost:5432/mydb",
+                "forage.jdbc.transaction.enabled=true",
+                "forage.ds2.jdbc.db.kind=mysql",
+                "forage.ds2.jdbc.url=jdbc:mysql://localhost/db2",
+                "forage.ds2.jdbc.username=user2",
+                "forage.ds2.jdbc.password=pass2");
+        Path appProps = writeProps(original.toArray(String[]::new));
+
+        QuarkusPropertyTranslator.TranslationResult result;
+        try {
+            result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+        } finally {
+            ConfigStore.getInstance().reload();
+        }
+        ForagePlugin.rewriteApplicationProperties(appProps, result);
+
+        List<String> lines = Files.readAllLines(appProps);
+        assertThat(lines).containsSubsequence(original.subList(0, 3));
+        assertThat(lines).noneMatch(l -> l.startsWith("forage.ds2."));
+        assertThat(lines).contains("quarkus.datasource.\"ds2\".db-kind=mysql");
+        assertThat(lines).noneMatch(l -> l.startsWith("quarkus.datasource.\"dataSource\"."));
+    }
+
     private Path writeProps(String... lines) throws IOException {
         Path path = tempDir.resolve("application.properties");
         Files.write(path, List.of(lines));
@@ -194,11 +222,11 @@ class ForagePluginRewriteTest {
 
     private static QuarkusPropertyTranslator.TranslationResult result(
             QuarkusPropertyTranslator.TranslationGroup group, Set<String> translatedKeys) {
-        return new QuarkusPropertyTranslator.TranslationResult(List.of(group), new LinkedHashSet<>(translatedKeys));
+        return result(List.of(group), translatedKeys);
     }
 
     private static QuarkusPropertyTranslator.TranslationResult result(
             List<QuarkusPropertyTranslator.TranslationGroup> groups, Set<String> translatedKeys) {
-        return new QuarkusPropertyTranslator.TranslationResult(groups, new LinkedHashSet<>(translatedKeys));
+        return new QuarkusPropertyTranslator.TranslationResult(groups, new LinkedHashSet<>(translatedKeys), List.of());
     }
 }

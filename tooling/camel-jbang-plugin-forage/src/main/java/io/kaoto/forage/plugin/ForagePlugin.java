@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
@@ -88,6 +89,13 @@ public class ForagePlugin implements Plugin {
     }
 
     private static void translateForageProperties(Path buildDir) {
+        // Also called by the silent run that precedes the export, when the build directory does not exist yet
+        Path appPropsPath = buildDir.resolve("src/main/resources/application.properties");
+        if (!Files.exists(appPropsPath)) {
+            LOG.debug("application.properties not found at {} — skipping property translation", appPropsPath);
+            return;
+        }
+
         String configDir = System.getProperty("forage.config.dir");
         File workingDir = configDir != null ? new File(configDir) : new File(System.getProperty("user.dir"));
 
@@ -103,13 +111,10 @@ public class ForagePlugin implements Plugin {
             ConfigStore.getInstance().reload();
         }
 
-        if (result.isEmpty()) {
-            return;
-        }
+        Printer printer = new Printer.SystemOutPrinter();
+        result.warnings().forEach(warning -> printer.println("⚠️  Quarkus export: " + warning));
 
-        Path appPropsPath = buildDir.resolve("src/main/resources/application.properties");
-        if (!Files.exists(appPropsPath)) {
-            LOG.warn("application.properties not found at {} — skipping property translation", appPropsPath);
+        if (result.isEmpty()) {
             return;
         }
 
@@ -160,8 +165,8 @@ public class ForagePlugin implements Plugin {
             lines.add("# Properties for " + group.moduleType());
         }
         lines.add("# Translated from:");
-        group.sourceProperties().forEach((k, v) -> lines.add("#   " + k + "=" + v));
-        group.properties().forEach((k, v) -> {
+        new TreeMap<>(group.sourceProperties()).forEach((k, v) -> lines.add("#   " + k + "=" + v));
+        new TreeMap<>(group.properties()).forEach((k, v) -> {
             if (v != null) {
                 lines.add(k + "=" + v);
             }
