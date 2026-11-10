@@ -11,7 +11,19 @@ import io.kaoto.forage.core.common.ForageModuleDescriptor;
 import io.kaoto.forage.core.jms.ConnectionFactoryProvider;
 import io.kaoto.forage.core.jta.store.ObjectStoreSettings;
 import io.kaoto.forage.core.jta.store.ObjectStoreType;
+import io.kaoto.forage.core.util.config.ConfigModule;
 import io.kaoto.forage.core.util.config.MissingConfigException;
+
+import static io.kaoto.forage.jms.common.ConnectionFactoryConfigEntries.BLOCK_IF_FULL;
+import static io.kaoto.forage.jms.common.ConnectionFactoryConfigEntries.BLOCK_IF_FULL_TIMEOUT_MILLIS;
+import static io.kaoto.forage.jms.common.ConnectionFactoryConfigEntries.BROKER_URL;
+import static io.kaoto.forage.jms.common.ConnectionFactoryConfigEntries.EXPIRY_TIMEOUT_MILLIS;
+import static io.kaoto.forage.jms.common.ConnectionFactoryConfigEntries.IDLE_TIMEOUT_MILLIS;
+import static io.kaoto.forage.jms.common.ConnectionFactoryConfigEntries.JMS_KIND;
+import static io.kaoto.forage.jms.common.ConnectionFactoryConfigEntries.MAX_CONNECTIONS;
+import static io.kaoto.forage.jms.common.ConnectionFactoryConfigEntries.MAX_SESSIONS_PER_CONNECTION;
+import static io.kaoto.forage.jms.common.ConnectionFactoryConfigEntries.PASSWORD;
+import static io.kaoto.forage.jms.common.ConnectionFactoryConfigEntries.USERNAME;
 
 /**
  * Module descriptor for Forage JMS. Captures all JMS-specific knowledge:
@@ -20,6 +32,22 @@ import io.kaoto.forage.core.util.config.MissingConfigException;
  * @since 1.1
  */
 public class JmsModuleDescriptor implements ForageModuleDescriptor<ConnectionFactoryConfig, ConnectionFactoryProvider> {
+
+    /**
+     * Properties {@link #translateProperties} maps to the Artemis connection factory and pooled-jms. Not listed: the
+     * transaction properties, which the Forage Quarkus extension also reads at runtime to add a JTA customizer.
+     */
+    private static final List<ConfigModule> REPLACED_BY_TRANSLATION = List.of(
+            JMS_KIND,
+            BROKER_URL,
+            USERNAME,
+            PASSWORD,
+            MAX_CONNECTIONS,
+            MAX_SESSIONS_PER_CONNECTION,
+            IDLE_TIMEOUT_MILLIS,
+            EXPIRY_TIMEOUT_MILLIS,
+            BLOCK_IF_FULL,
+            BLOCK_IF_FULL_TIMEOUT_MILLIS);
 
     @Override
     public String modulePrefix() {
@@ -67,6 +95,17 @@ public class JmsModuleDescriptor implements ForageModuleDescriptor<ConnectionFac
         // returns the raw broker ConnectionFactory (e.g., ActiveMQConnectionFactory) which has
         // no stop() method — setting one would make Spring fail at context close.
         return createConfig(prefix).poolEnabled() ? "stop" : "";
+    }
+
+    /**
+     * Only for the default Artemis connection factory: the Forage Quarkus extension registers a JMS component per
+     * named connection factory, and creates the IBM MQ connection factory, from the Forage properties at runtime.
+     */
+    @Override
+    public boolean replacedByTranslation(String prefix, ConnectionFactoryConfig config, String propertyName) {
+        return prefix == null
+                && "artemis".equals(config.jmsKind())
+                && REPLACED_BY_TRANSLATION.stream().anyMatch(m -> m.match(propertyName));
     }
 
     @Override
