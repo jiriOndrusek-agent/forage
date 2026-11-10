@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
@@ -61,7 +62,7 @@ public class ForagePlugin implements Plugin {
 
             @Override
             public Set<String> getDependencies(org.apache.camel.dsl.jbang.core.common.RuntimeType runtimeType) {
-                if (RuntimeType.quarkus.name().equals(runtimeType.name())) {
+                if (RuntimeType.fromValue(runtimeType.name()) == RuntimeType.QUARKUS) {
                     // mirrors ExportBaseCommand.BUILD_DIR (protected, not accessible from plugins)
                     Path buildDir = Path.of(CommandLineHelper.CAMEL_JBANG_WORK_DIR, "work");
                     translateForageProperties(buildDir);
@@ -87,15 +88,24 @@ public class ForagePlugin implements Plugin {
         });
     }
 
-    private static void translateForageProperties(Path buildDir) {
+    static void translateForageProperties(Path buildDir) {
+        // Also called by the silent run that precedes the export, when the build directory does not exist yet
+        Path appPropsPath = buildDir.resolve("src/main/resources/application.properties");
+        if (!Files.exists(appPropsPath)) {
+            LOG.debug("application.properties not found at {} — skipping property translation", appPropsPath);
+            return;
+        }
+
         String configDir = System.getProperty("forage.config.dir");
         File workingDir = configDir != null ? new File(configDir) : new File(System.getProperty("user.dir"));
 
+        // The translation must never fail the export: the forage properties then stay as they are
+        Printer printer = new Printer.SystemOutPrinter();
         QuarkusPropertyTranslator.TranslationResult result;
         try {
             result = QuarkusPropertyTranslator.translate(workingDir);
-        } catch (IOException e) {
-            LOG.warn("Failed to scan forage properties for Quarkus translation: {}", e.getMessage());
+        } catch (IOException | RuntimeException e) {
+            printer.println("⚠️  Quarkus export: forage properties not translated: " + e.getMessage());
             return;
         } finally {
             // translate() populates the global ConfigStore singleton via config.register() — clean up
@@ -103,21 +113,17 @@ public class ForagePlugin implements Plugin {
             ConfigStore.getInstance().reload();
         }
 
-        if (result.isEmpty()) {
-            return;
-        }
+        result.warnings().forEach(warning -> printer.println("⚠️  Quarkus export: " + warning));
 
-        Path appPropsPath = buildDir.resolve("src/main/resources/application.properties");
-        if (!Files.exists(appPropsPath)) {
-            LOG.warn("application.properties not found at {} — skipping property translation", appPropsPath);
+        if (result.isEmpty()) {
             return;
         }
 
         try {
             rewriteApplicationProperties(appPropsPath, result);
             LOG.info("Translated {} forage properties to Quarkus-native format", result.propertyCount());
-        } catch (IOException e) {
-            LOG.warn("Failed to rewrite application.properties: {}", e.getMessage());
+        } catch (IOException | RuntimeException e) {
+            printer.println("⚠️  Quarkus export: forage properties not translated: " + e.getMessage());
         }
     }
 
@@ -160,8 +166,8 @@ public class ForagePlugin implements Plugin {
             lines.add("# Properties for " + group.moduleType());
         }
         lines.add("# Translated from:");
-        group.sourceProperties().forEach((k, v) -> lines.add("#   " + k + "=" + v));
-        group.properties().forEach((k, v) -> {
+        new TreeMap<>(group.sourceProperties()).forEach((k, v) -> lines.add("#   " + k + "=" + v));
+        new TreeMap<>(group.properties()).forEach((k, v) -> {
             if (v != null) {
                 lines.add(k + "=" + v);
             }

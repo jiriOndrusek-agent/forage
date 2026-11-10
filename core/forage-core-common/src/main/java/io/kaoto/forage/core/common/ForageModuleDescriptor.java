@@ -78,12 +78,19 @@ public interface ForageModuleDescriptor<C extends Config, P extends BeanProvider
     }
 
     /**
-     * Translates forage properties for export-time use. By default delegates to
-     * {@link #translateProperties(String, Config)}, but subclasses can override to skip
-     * runtime-only checks (e.g., classpath verification) that don't apply at export time.
+     * Whether {@link #translateProperties(String, Config)} fully replaces the given Forage property, so that
+     * {@code camel export --runtime=quarkus} can write the translated properties instead of it. A configuration
+     * with a property that is not replaced, for example one the Forage Quarkus extension reads at runtime to
+     * create an auxiliary bean, is exported unchanged.
+     *
+     * @param prefix the configuration prefix, or {@code null} for the default configuration
+     * @param config the loaded configuration
+     * @param propertyName the full property name, e.g. {@code forage.ds1.jdbc.url}
+     * @return {@code false} by default: the export keeps the module's Forage properties
+     * @since 1.6.3
      */
-    default Map<String, String> translatePropertiesForExport(String prefix, C config) {
-        return translateProperties(prefix, config);
+    default boolean replacedByTranslation(String prefix, C config, String propertyName) {
+        return false;
     }
 
     /**

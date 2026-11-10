@@ -8,6 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import io.kaoto.forage.core.util.config.ConfigStore;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -180,6 +181,57 @@ class ForagePluginRewriteTest {
         assertThat(lines).noneMatch(l -> l.equals("forage.jdbc.db.kind=postgresql"));
     }
 
+    @Test
+    void keptGroupStaysUnchanged() throws IOException {
+        List<String> original = List.of(
+                "forage.ds1.jdbc.db.kind=postgresql",
+                "forage.ds1.jdbc.url=jdbc:postgresql://localhost:5432/mydb",
+                "forage.ds1.jdbc.transaction.enabled=true",
+                "forage.ds2.jdbc.db.kind=mysql",
+                "forage.ds2.jdbc.url=jdbc:mysql://localhost/db2",
+                "forage.ds2.jdbc.username=user2",
+                "forage.ds2.jdbc.password=pass2");
+        Path appProps = writeProps(original.toArray(String[]::new));
+
+        QuarkusPropertyTranslator.TranslationResult result;
+        try {
+            result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+        } finally {
+            ConfigStore.getInstance().reload();
+        }
+        ForagePlugin.rewriteApplicationProperties(appProps, result);
+
+        List<String> lines = Files.readAllLines(appProps);
+        assertThat(lines).containsSubsequence(original.subList(0, 3));
+        assertThat(lines).noneMatch(l -> l.startsWith("forage.ds2."));
+        assertThat(lines).contains("quarkus.datasource.\"ds2\".db-kind=mysql");
+        assertThat(lines).noneMatch(l -> l.startsWith("quarkus.datasource.\"ds1\"."));
+    }
+
+    @Test
+    void placeholdersComeThroughUnchanged() throws IOException {
+        List<String> original = List.of(
+                "forage.jdbc.db.kind=postgresql",
+                "forage.jdbc.url=jdbc:postgresql://localhost:5432/mydb",
+                "forage.jdbc.username={{env:W106_DB_USER:admin}}",
+                "forage.jdbc.password={{sys:w106.db.password}}");
+        Path appProps = writeProps(original.toArray(String[]::new));
+
+        System.setProperty("w106.db.password", "resolved-secret");
+        QuarkusPropertyTranslator.TranslationResult result;
+        try {
+            result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+        } finally {
+            System.clearProperty("w106.db.password");
+            ConfigStore.getInstance().reload();
+        }
+        ForagePlugin.rewriteApplicationProperties(appProps, result);
+
+        List<String> lines = Files.readAllLines(appProps);
+        assertThat(lines).isEqualTo(original);
+        assertThat(lines).noneMatch(l -> l.contains("resolved-secret") || l.endsWith("=admin"));
+    }
+
     private Path writeProps(String... lines) throws IOException {
         Path path = tempDir.resolve("application.properties");
         Files.write(path, List.of(lines));
@@ -194,11 +246,34 @@ class ForagePluginRewriteTest {
 
     private static QuarkusPropertyTranslator.TranslationResult result(
             QuarkusPropertyTranslator.TranslationGroup group, Set<String> translatedKeys) {
-        return new QuarkusPropertyTranslator.TranslationResult(List.of(group), new LinkedHashSet<>(translatedKeys));
+        return result(List.of(group), translatedKeys);
     }
 
     private static QuarkusPropertyTranslator.TranslationResult result(
             List<QuarkusPropertyTranslator.TranslationGroup> groups, Set<String> translatedKeys) {
-        return new QuarkusPropertyTranslator.TranslationResult(groups, new LinkedHashSet<>(translatedKeys));
+        return new QuarkusPropertyTranslator.TranslationResult(groups, new LinkedHashSet<>(translatedKeys), List.of());
+    }
+
+    @Test
+    void translationNeverFailsTheExport() throws IOException {
+        Path resources = Files.createDirectories(tempDir.resolve("src/main/resources"));
+        Path appProps = resources.resolve("application.properties");
+        // java.util.Properties cannot read "\\u" followed by a non-hexadecimal character
+        List<String> original = List.of(
+                "my.backup.dir=C:\\users\\me",
+                "forage.jdbc.db.kind=postgresql",
+                "forage.jdbc.url=jdbc:postgresql://localhost:5432/mydb",
+                "forage.jdbc.username=admin",
+                "forage.jdbc.password=secret");
+        Files.write(appProps, original);
+
+        System.setProperty("forage.config.dir", tempDir.toString());
+        try {
+            ForagePlugin.translateForageProperties(tempDir);
+        } finally {
+            System.clearProperty("forage.config.dir");
+        }
+
+        assertThat(Files.readAllLines(appProps)).isEqualTo(original);
     }
 }
