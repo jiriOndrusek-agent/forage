@@ -1,10 +1,13 @@
 package io.kaoto.forage.plugin;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
@@ -96,14 +99,13 @@ public class ForagePlugin implements Plugin {
             return;
         }
 
-        String configDir = System.getProperty("forage.config.dir");
-        File workingDir = configDir != null ? new File(configDir) : new File(System.getProperty("user.dir"));
-
         // The translation must never fail the export: the forage properties then stay as they are
         Printer printer = new Printer.SystemOutPrinter();
         QuarkusPropertyTranslator.TranslationResult result;
         try {
-            result = QuarkusPropertyTranslator.translate(workingDir);
+            // Translate the exported properties files, which also hold the --property values of the export
+            result =
+                    QuarkusPropertyTranslator.translate(appPropsPath.getParent().toFile());
         } catch (IOException | RuntimeException e) {
             printer.println("⚠️  Quarkus export: forage properties not translated: " + e.getMessage());
             return;
@@ -129,32 +131,122 @@ public class ForagePlugin implements Plugin {
 
     static void rewriteApplicationProperties(Path appPropsPath, QuarkusPropertyTranslator.TranslationResult result)
             throws IOException {
-        List<String> originalLines = Files.readAllLines(appPropsPath);
         Set<String> keysToRemove = result.translatedForageKeys();
+        // Read and write as ISO-8859-1, which keeps the bytes of the other lines whatever the file encoding is.
+        // Every file is encoded before any is written, so that a failure leaves the export unchanged.
+        Map<Path, byte[]> rewritten = new LinkedHashMap<>();
 
-        // Keep every line except those whose key was translated to Quarkus format
-        Stream<String> filtered = originalLines.stream().filter(line -> {
-            String key = extractPropertyKey(line);
-            return key == null || !keysToRemove.contains(key);
-        });
+        // The other properties files (e.g. forage-datasource-factory.properties) are exported as they are
+        List<Path> otherFiles;
+        try (Stream<Path> files = Files.list(appPropsPath.getParent())) {
+            otherFiles = files.filter(f -> {
+                        String name = f.getFileName().toString();
+                        return name.endsWith(".properties") && !name.startsWith("application");
+                    })
+                    .toList();
+        }
+        for (Path file : otherFiles) {
+            List<String> lines = Files.readAllLines(file, StandardCharsets.ISO_8859_1);
+            List<String> kept = withoutKeys(lines, keysToRemove);
+            if (kept.size() != lines.size()) {
+                rewritten.put(file, toBytes(kept));
+            }
+        }
 
-        // Append each translation group with a header showing the original forage properties
-        Stream<String> translated = result.groups().stream().flatMap(ForagePlugin::translationGroupToLines);
+        // Keep every line except those whose key was translated to Quarkus format, and append each translation
+        // group with a header showing the original forage properties
+        List<String> appLines = new ArrayList<>(
+                withoutKeys(Files.readAllLines(appPropsPath, StandardCharsets.ISO_8859_1), keysToRemove));
+        result.groups().stream().flatMap(ForagePlugin::translationGroupToLines).forEach(appLines::add);
+        rewritten.put(appPropsPath, toBytes(appLines));
 
-        Files.write(appPropsPath, Stream.concat(filtered, translated).toList());
+        for (Map.Entry<Path, byte[]> file : rewritten.entrySet()) {
+            Files.write(file.getKey(), file.getValue());
+        }
     }
 
     /**
-     * Extracts the property key from a .properties file line.
-     * Returns {@code null} for blank lines, comments, and lines without '='.
+     * Encodes the lines as ISO-8859-1. Written keys and values are escaped to ASCII, so only a character of a
+     * comment can be replaced by {@code ?}.
+     */
+    private static byte[] toBytes(List<String> lines) {
+        StringBuilder content = new StringBuilder();
+        lines.forEach(line -> content.append(line).append(System.lineSeparator()));
+        return content.toString().getBytes(StandardCharsets.ISO_8859_1);
+    }
+
+    /**
+     * Removes the properties with the given keys, continuation lines included, reading the lines as
+     * {@link java.util.Properties} does.
+     */
+    private static List<String> withoutKeys(List<String> lines, Set<String> keysToRemove) {
+        List<String> kept = new ArrayList<>();
+        boolean continuation = false;
+        boolean removing = false;
+        for (String line : lines) {
+            boolean comment = false;
+            if (!continuation) {
+                String trimmed = line.stripLeading();
+                comment = trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith("!");
+                removing = !comment && keysToRemove.contains(extractPropertyKey(trimmed));
+            }
+            if (!removing) {
+                kept.add(line);
+            }
+            // A line ending with an odd number of backslashes continues on the next one
+            int backslashes = 0;
+            for (int i = line.length() - 1; i >= 0 && line.charAt(i) == '\\'; i--) {
+                backslashes++;
+            }
+            continuation = !comment && backslashes % 2 == 1;
+        }
+        return kept;
+    }
+
+    /**
+     * Extracts the key of a property line without its leading whitespace: up to the first unescaped
+     * {@code =}, {@code :} or whitespace.
      */
     private static String extractPropertyKey(String line) {
-        String trimmed = line.trim();
-        if (trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith("!")) {
-            return null;
+        int end = 0;
+        while (end < line.length()) {
+            char c = line.charAt(end);
+            if (c == '\\') {
+                end += 2;
+            } else if (c == '=' || c == ':' || Character.isWhitespace(c)) {
+                break;
+            } else {
+                end++;
+            }
         }
-        int eqIdx = trimmed.indexOf('=');
-        return eqIdx < 0 ? null : trimmed.substring(0, eqIdx).trim();
+        return line.substring(0, Math.min(end, line.length()));
+    }
+
+    /**
+     * Escapes a key or a value for a properties file, as {@link java.util.Properties#store} does.
+     */
+    private static String escape(String text, boolean key) {
+        StringBuilder escaped = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '\\' -> escaped.append("\\\\");
+                case '\t' -> escaped.append("\\t");
+                case '\n' -> escaped.append("\\n");
+                case '\r' -> escaped.append("\\r");
+                case '\f' -> escaped.append("\\f");
+                case ' ' -> escaped.append(key || i == 0 ? "\\ " : " ");
+                case '=', ':', '#', '!' -> escaped.append(key ? "\\" : "").append(c);
+                default -> {
+                    if (c < 0x20 || c > 0x7e) {
+                        escaped.append(String.format("\\u%04X", (int) c));
+                    } else {
+                        escaped.append(c);
+                    }
+                }
+            }
+        }
+        return escaped.toString();
     }
 
     private static Stream<String> translationGroupToLines(QuarkusPropertyTranslator.TranslationGroup group) {
@@ -166,10 +258,10 @@ public class ForagePlugin implements Plugin {
             lines.add("# Properties for " + group.moduleType());
         }
         lines.add("# Translated from:");
-        new TreeMap<>(group.sourceProperties()).forEach((k, v) -> lines.add("#   " + k + "=" + v));
+        new TreeMap<>(group.sourceProperties()).forEach((k, v) -> lines.add("#   " + k + "=" + escape(v, false)));
         new TreeMap<>(group.properties()).forEach((k, v) -> {
             if (v != null) {
-                lines.add(k + "=" + v);
+                lines.add(escape(k, true) + "=" + escape(v, false));
             }
         });
         return lines.build();

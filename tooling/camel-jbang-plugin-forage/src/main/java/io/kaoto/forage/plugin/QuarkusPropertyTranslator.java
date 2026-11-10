@@ -308,7 +308,9 @@ public final class QuarkusPropertyTranslator {
         for (List<PropertyOccurrence> occurrences : factoryProperties.values()) {
             for (PropertyOccurrence occ : occurrences) {
                 String prefix = extractNamedPrefix(occ.fullPropertyName(), modulePrefix);
-                result.computeIfAbsent(prefix, k -> new LinkedHashMap<>()).put(occ.fullPropertyName(), occ.value());
+                // The scanner lists application.properties first: its values override the forage-*.properties ones
+                result.computeIfAbsent(prefix, k -> new LinkedHashMap<>())
+                        .putIfAbsent(occ.fullPropertyName(), occ.value());
             }
         }
 
