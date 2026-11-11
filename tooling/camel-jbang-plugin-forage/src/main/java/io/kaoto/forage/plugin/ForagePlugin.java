@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.ServiceConfigurationError;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
@@ -36,6 +37,8 @@ import picocli.CommandLine;
 public class ForagePlugin implements Plugin {
 
     private static final Logger LOG = LoggerFactory.getLogger(ForagePlugin.class);
+
+    static final String MP_CONFIG_PROPERTIES = "META-INF/microprofile-config.properties";
 
     @Override
     public void customize(CommandLine commandLine, CamelJBangMain main) {
@@ -106,7 +109,7 @@ public class ForagePlugin implements Plugin {
             // Translate the exported properties files, which also hold the --property values of the export
             result =
                     QuarkusPropertyTranslator.translate(appPropsPath.getParent().toFile());
-        } catch (IOException | RuntimeException e) {
+        } catch (IOException | RuntimeException | LinkageError | ServiceConfigurationError e) {
             printer.println("⚠️  Quarkus export: forage properties not translated: " + e.getMessage());
             return;
         } finally {
@@ -124,7 +127,7 @@ public class ForagePlugin implements Plugin {
         try {
             rewriteApplicationProperties(appPropsPath, result);
             LOG.info("Translated {} forage properties to Quarkus-native format", result.propertyCount());
-        } catch (IOException | RuntimeException e) {
+        } catch (IOException | RuntimeException | LinkageError | ServiceConfigurationError e) {
             printer.println("⚠️  Quarkus export: forage properties not translated: " + e.getMessage());
         }
     }
@@ -153,13 +156,22 @@ public class ForagePlugin implements Plugin {
             }
         }
 
-        // Keep every line except those whose key was translated to Quarkus format, and append each translation
-        // group with a header showing the original forage properties
-        List<String> appLines = new ArrayList<>(
-                withoutKeys(Files.readAllLines(appPropsPath, StandardCharsets.ISO_8859_1), keysToRemove));
-        result.groups().stream().flatMap(ForagePlugin::translationGroupToLines).forEach(appLines::add);
+        // Keep every line except those whose key was translated to Quarkus format
+        List<String> appLines =
+                withoutKeys(Files.readAllLines(appPropsPath, StandardCharsets.ISO_8859_1), keysToRemove);
         rewritten.put(appPropsPath, toBytes(appLines));
 
+        // Append each translation group, with a header showing the original forage properties, to
+        // microprofile-config.properties: at ordinal 100, below the user's configuration (250+) and the runtime
+        // translation of FORAGE_* environment variables by Forage (240), so both still override it
+        Path mpConfigPath = appPropsPath.resolveSibling(MP_CONFIG_PROPERTIES);
+        List<String> mpConfigLines = Files.exists(mpConfigPath)
+                ? new ArrayList<>(Files.readAllLines(mpConfigPath, StandardCharsets.ISO_8859_1))
+                : new ArrayList<>();
+        result.groups().stream().flatMap(ForagePlugin::translationGroupToLines).forEach(mpConfigLines::add);
+        rewritten.put(mpConfigPath, toBytes(mpConfigLines));
+
+        Files.createDirectories(mpConfigPath.getParent());
         for (Map.Entry<Path, byte[]> file : rewritten.entrySet()) {
             Files.write(file.getKey(), file.getValue());
         }

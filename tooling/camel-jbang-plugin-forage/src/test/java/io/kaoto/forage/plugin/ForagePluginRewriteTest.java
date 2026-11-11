@@ -67,8 +67,9 @@ class ForagePluginRewriteTest {
 
         assertThat(lines).contains("# App config", "server.port=8080", "camel.rest.port=9090");
         assertThat(lines).noneMatch(l -> l.startsWith("forage."));
-        assertThat(lines).anyMatch(l -> l.contains("quarkus.datasource.\"dataSource\".db-kind=postgresql"));
-        assertThat(lines).anyMatch(l -> l.contains("quarkus.datasource.\"dataSource\".username=admin"));
+        assertThat(lines).noneMatch(l -> l.startsWith("quarkus."));
+        assertThat(mpConfigLines()).contains("quarkus.datasource.\"dataSource\".db-kind=postgresql");
+        assertThat(mpConfigLines()).contains("quarkus.datasource.\"dataSource\".username=admin");
     }
 
     @Test
@@ -91,11 +92,9 @@ class ForagePluginRewriteTest {
                                         Map.of("quarkus.datasource.\"ds2\".db-kind", "mysql"))),
                         Set.of("forage.ds1.jdbc.db.kind", "forage.ds2.jdbc.db.kind")));
 
-        List<String> lines = Files.readAllLines(appProps);
-
-        assertThat(lines).contains("# Properties for jdbc with prefix 'ds1'");
-        assertThat(lines).contains("# Properties for jdbc with prefix 'ds2'");
-        assertThat(lines).noneMatch(l -> l.startsWith("forage."));
+        assertThat(mpConfigLines()).contains("# Properties for jdbc with prefix 'ds1'");
+        assertThat(mpConfigLines()).contains("# Properties for jdbc with prefix 'ds2'");
+        assertThat(Files.readAllLines(appProps)).noneMatch(l -> l.startsWith("forage."));
     }
 
     @Test
@@ -112,7 +111,7 @@ class ForagePluginRewriteTest {
                                 Map.of("quarkus.datasource.\"dataSource\".db-kind", "postgresql")),
                         Set.of("forage.jdbc.db.kind")));
 
-        List<String> lines = Files.readAllLines(appProps);
+        List<String> lines = mpConfigLines();
 
         assertThat(lines).contains("# Properties for jdbc");
         assertThat(lines).noneMatch(l -> l.contains("with prefix"));
@@ -136,7 +135,7 @@ class ForagePluginRewriteTest {
                                         "admin")),
                         Set.of("forage.jdbc.db.kind", "forage.jdbc.username")));
 
-        List<String> lines = Files.readAllLines(appProps);
+        List<String> lines = mpConfigLines();
 
         assertThat(lines).contains("# Translated from:");
         assertThat(lines).anyMatch(l -> l.equals("#   forage.jdbc.db.kind=postgresql"));
@@ -207,8 +206,8 @@ class ForagePluginRewriteTest {
         List<String> lines = Files.readAllLines(appProps);
         assertThat(lines).containsSubsequence(original.subList(0, 3));
         assertThat(lines).noneMatch(l -> l.startsWith("forage.ds2."));
-        assertThat(lines).contains("quarkus.datasource.\"ds2\".db-kind=mysql");
-        assertThat(lines).noneMatch(l -> l.startsWith("quarkus.datasource.\"ds1\"."));
+        assertThat(mpConfigLines()).contains("quarkus.datasource.\"ds2\".db-kind=mysql");
+        assertThat(mpConfigLines()).noneMatch(l -> l.startsWith("quarkus.datasource.\"ds1\"."));
     }
 
     @Test
@@ -271,8 +270,9 @@ class ForagePluginRewriteTest {
                         "forage.ds2.jdbc.username=user2",
                         "forage.ds2.jdbc.password=pass2",
                         "forage.ds2.jdbc.transaction.enabled=true");
-        assertThat(Files.readAllLines(appProps))
-                .contains("camel.main.name=demo", "quarkus.datasource.\"ds1\".db-kind=postgresql")
+        assertThat(Files.readAllLines(appProps)).containsExactly("camel.main.name=demo");
+        assertThat(mpConfigLines())
+                .contains("quarkus.datasource.\"ds1\".db-kind=postgresql")
                 .noneMatch(l -> l.contains("\"ds2\""));
         assertThat(Files.readAllLines(otherProps)).containsExactly("greeting=Hello");
     }
@@ -295,7 +295,8 @@ class ForagePluginRewriteTest {
 
         List<String> lines = Files.readAllLines(appProps);
         assertThat(lines).noneMatch(l -> l.startsWith("forage."));
-        assertThat(lines).contains("quarkus.datasource.\"dataSource\".jdbc.max-size=50");
+        assertThat(Files.readAllLines(resources.resolve(ForagePlugin.MP_CONFIG_PROPERTIES)))
+                .contains("quarkus.datasource.\"dataSource\".jdbc.max-size=50");
     }
 
     @Test
@@ -317,7 +318,7 @@ class ForagePluginRewriteTest {
         }
         ForagePlugin.rewriteApplicationProperties(appProps, result);
 
-        assertThat(Files.readAllLines(appProps))
+        assertThat(mpConfigLines())
                 .contains("quarkus.datasource.\"ds1\".jdbc.url=jdbc:postgresql://from-application/db");
     }
 
@@ -346,8 +347,7 @@ class ForagePluginRewriteTest {
 
         assertThat(Files.readAllLines(forageProps))
                 .containsExactly("# forage.ds1.jdbc.url=commented out", "other.key=value");
-        assertThat(Files.readAllLines(appProps))
-                .contains("quarkus.datasource.\"ds1\".jdbc.url=jdbc:postgresql://localhost/db1");
+        assertThat(mpConfigLines()).contains("quarkus.datasource.\"ds1\".jdbc.url=jdbc:postgresql://localhost/db1");
     }
 
     @Test
@@ -367,7 +367,7 @@ class ForagePluginRewriteTest {
         ForagePlugin.rewriteApplicationProperties(appProps, result);
 
         Properties exported = new Properties();
-        try (Reader reader = Files.newBufferedReader(appProps)) {
+        try (Reader reader = Files.newBufferedReader(tempDir.resolve(ForagePlugin.MP_CONFIG_PROPERTIES))) {
             exported.load(reader);
         }
         assertThat(exported.getProperty("quarkus.datasource.\"ds1\".password")).isEqualTo("pa\\ss");
@@ -390,6 +390,7 @@ class ForagePluginRewriteTest {
         ForagePlugin.translateForageProperties(tempDir);
 
         assertThat(Files.readAllLines(appProps)).isEqualTo(original);
+        assertThat(resources.resolve(ForagePlugin.MP_CONFIG_PROPERTIES)).doesNotExist();
     }
 
     @Test
@@ -416,7 +417,7 @@ class ForagePluginRewriteTest {
 
         assertThat(Files.readAllBytes(forageProps))
                 .isEqualTo(("# caf\u00e9 datasource" + System.lineSeparator()).getBytes(StandardCharsets.ISO_8859_1));
-        assertThat(Files.readAllLines(appProps)).contains("quarkus.datasource.\"ds1\".db-kind=postgresql");
+        assertThat(mpConfigLines()).contains("quarkus.datasource.\"ds1\".db-kind=postgresql");
     }
 
     @Test
@@ -437,11 +438,60 @@ class ForagePluginRewriteTest {
         ForagePlugin.rewriteApplicationProperties(appProps, result);
 
         Properties exported = new Properties();
-        try (Reader reader = Files.newBufferedReader(appProps)) {
+        try (Reader reader = Files.newBufferedReader(tempDir.resolve(ForagePlugin.MP_CONFIG_PROPERTIES))) {
             exported.load(reader);
         }
         assertThat(exported.getProperty("quarkus.datasource.\"ds1\".jdbc.additional-jdbc-properties.\"price\u20AC\""))
                 .isEqualTo("1");
+    }
+
+    @Test
+    void userQuarkusPropertiesAreKept() throws IOException {
+        // application.properties (ordinal 250) overrides microprofile-config.properties (ordinal 100)
+        Path appProps = writeProps("quarkus.datasource.\"ds1\".jdbc.max-size=50");
+        Files.write(
+                tempDir.resolve("forage-datasource-factory.properties"),
+                List.of(
+                        "forage.ds1.jdbc.db.kind=postgresql",
+                        "forage.ds1.jdbc.url=jdbc:postgresql://localhost/db1",
+                        "forage.ds1.jdbc.username=user1",
+                        "forage.ds1.jdbc.password=pass1"));
+
+        QuarkusPropertyTranslator.TranslationResult result;
+        try {
+            result = QuarkusPropertyTranslator.translate(tempDir.toFile());
+        } finally {
+            ConfigStore.getInstance().reload();
+        }
+        ForagePlugin.rewriteApplicationProperties(appProps, result);
+
+        assertThat(Files.readAllLines(appProps)).containsExactly("quarkus.datasource.\"ds1\".jdbc.max-size=50");
+        assertThat(mpConfigLines()).contains("quarkus.datasource.\"ds1\".jdbc.max-size=20");
+    }
+
+    @Test
+    void existingMicroprofileConfigIsKept() throws IOException {
+        Path appProps = writeProps("forage.jdbc.db.kind=postgresql");
+        Path mpConfig = Files.createDirectories(tempDir.resolve("META-INF")).resolve("microprofile-config.properties");
+        Files.write(mpConfig, List.of("my.key=value"));
+
+        ForagePlugin.rewriteApplicationProperties(
+                appProps,
+                result(
+                        group(
+                                "jdbc",
+                                null,
+                                Map.of("forage.jdbc.db.kind", "postgresql"),
+                                Map.of("quarkus.datasource.\"dataSource\".db-kind", "postgresql")),
+                        Set.of("forage.jdbc.db.kind")));
+
+        assertThat(mpConfigLines())
+                .startsWith("my.key=value")
+                .contains("quarkus.datasource.\"dataSource\".db-kind=postgresql");
+    }
+
+    private List<String> mpConfigLines() throws IOException {
+        return Files.readAllLines(tempDir.resolve(ForagePlugin.MP_CONFIG_PROPERTIES));
     }
 
     private Path writeProps(String... lines) throws IOException {

@@ -130,8 +130,10 @@ Export your project to Spring Boot or Quarkus with all Forage dependencies inclu
 ### Quarkus Properties
 
 The Quarkus export writes the JDBC datasources and the default Artemis JMS connection factory as Quarkus
-properties (`quarkus.datasource.*`, `quarkus.artemis.*`, `quarkus.pooled-jms.*`) in `application.properties`,
-instead of their `forage.*` properties. A comment above each block lists the original properties.
+properties (`quarkus.datasource.*`, `quarkus.artemis.*`, `quarkus.pooled-jms.*`) in
+`src/main/resources/META-INF/microprofile-config.properties`, instead of their `forage.*` properties. A comment above
+each block lists the original properties. That file has a lower ordinal (100) than `application.properties`, so the
+`quarkus.*` values set there still win.
 
 A configuration keeps its `forage.*` properties, which the Forage Quarkus extension handles at runtime, when:
 
@@ -145,8 +147,12 @@ A configuration keeps its `forage.*` properties, which the Forage Quarkus extens
 
 The export prints a warning for each of them. The other modules always keep their `forage.*` properties.
 
-Override translated values with Quarkus configuration, for example `QUARKUS_DATASOURCE__DS1__PASSWORD`, not with
-`FORAGE_*` variables: Forage would find an incomplete configuration and fail at startup.
+Override translated values with Quarkus configuration, for example `QUARKUS_DATASOURCE__DS1__PASSWORD`. `FORAGE_*`
+variables still override them only when they set the whole configuration (e.g. `FORAGE_DS1_JDBC_DB_KIND`, `_URL`,
+`_USERNAME` and `_PASSWORD`): with only some of them, Forage finds an incomplete configuration and fails at startup,
+with an error that points to the Quarkus configuration.
+Even then, Forage's runtime configuration takes over that datasource, so the other translated settings (e.g. pool
+`max-size`) fall back to Forage defaults. Set them through `FORAGE_*` variables too, or override with `QUARKUS_*`.
 {% endraw %}
 
 ## Testing Connections
