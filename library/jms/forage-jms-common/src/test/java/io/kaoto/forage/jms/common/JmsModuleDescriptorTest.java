@@ -112,4 +112,40 @@ class JmsModuleDescriptorTest {
             ConfigStore.getInstance().reload();
         }
     }
+
+    @Test
+    void translationReplacesTheDefaultArtemisConnectionFactory() {
+        JmsModuleDescriptor descriptor = new JmsModuleDescriptor();
+        ConnectionFactoryConfig config = new ConnectionFactoryConfig();
+
+        assertThat(descriptor.replacedByTranslation(null, config, "forage.jms.broker.url"))
+                .isTrue();
+        assertThat(descriptor.replacedByTranslation(null, config, "forage.jms.pool.max.connections"))
+                .isTrue();
+        // The Forage Quarkus extension adds a JTA customizer for transacted connection factories
+        assertThat(descriptor.replacedByTranslation(null, config, "forage.jms.transaction.enabled"))
+                .isFalse();
+        assertThat(descriptor.replacedByTranslation(null, config, "forage.jms.ssl.enabled"))
+                .isFalse();
+    }
+
+    @Test
+    void namedAndIbmMqConnectionFactoriesAreNotReplacedByTranslation() {
+        System.setProperty("forage.mq1.jms.kind", "artemis");
+        try {
+            JmsModuleDescriptor descriptor = new JmsModuleDescriptor();
+            // A named connection factory gets its own JMS component at runtime
+            assertThat(descriptor.replacedByTranslation(
+                            "mq1", new ConnectionFactoryConfig("mq1"), "forage.mq1.jms.kind"))
+                    .isFalse();
+
+            // The Forage Quarkus extension creates the IBM MQ connection factory
+            System.setProperty("forage.jms.kind", "ibmmq");
+            assertThat(descriptor.replacedByTranslation(null, new ConnectionFactoryConfig(), "forage.jms.kind"))
+                    .isFalse();
+        } finally {
+            System.clearProperty("forage.mq1.jms.kind");
+            ConfigStore.getInstance().reload();
+        }
+    }
 }

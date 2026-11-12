@@ -13,10 +13,22 @@ import io.kaoto.forage.core.common.ServiceLoaderHelper;
 import io.kaoto.forage.core.jdbc.DataSourceProvider;
 import io.kaoto.forage.core.jta.store.ObjectStoreSettings;
 import io.kaoto.forage.core.jta.store.ObjectStoreType;
+import io.kaoto.forage.core.util.config.ConfigModule;
 import io.kaoto.forage.core.util.config.MissingConfigException;
 import io.kaoto.forage.jdbc.common.aggregation.ForageAggregationRepository;
 import io.kaoto.forage.jdbc.common.idempotent.ForageIdRepository;
 import io.kaoto.forage.jdbc.common.idempotent.ForageJdbcMessageIdRepository;
+
+import static io.kaoto.forage.jdbc.common.DataSourceFactoryConfigEntries.ACQUISITION_TIMEOUT_SECONDS;
+import static io.kaoto.forage.jdbc.common.DataSourceFactoryConfigEntries.DB_KIND;
+import static io.kaoto.forage.jdbc.common.DataSourceFactoryConfigEntries.INITIAL_SIZE;
+import static io.kaoto.forage.jdbc.common.DataSourceFactoryConfigEntries.JDBC_URL;
+import static io.kaoto.forage.jdbc.common.DataSourceFactoryConfigEntries.LEAK_TIMEOUT_MINUTES;
+import static io.kaoto.forage.jdbc.common.DataSourceFactoryConfigEntries.MAX_SIZE;
+import static io.kaoto.forage.jdbc.common.DataSourceFactoryConfigEntries.MIN_SIZE;
+import static io.kaoto.forage.jdbc.common.DataSourceFactoryConfigEntries.PASSWORD;
+import static io.kaoto.forage.jdbc.common.DataSourceFactoryConfigEntries.USERNAME;
+import static io.kaoto.forage.jdbc.common.DataSourceFactoryConfigEntries.VALIDATION_TIMEOUT_SECONDS;
 
 /**
  * Module descriptor for Forage JDBC. Captures all JDBC-specific knowledge:
@@ -25,6 +37,23 @@ import io.kaoto.forage.jdbc.common.idempotent.ForageJdbcMessageIdRepository;
  * @since 1.1
  */
 public class JdbcModuleDescriptor implements ForageModuleDescriptor<DataSourceFactoryConfig, DataSourceProvider> {
+
+    /**
+     * Properties {@link #translateProperties} maps to properties of the Quarkus datasource (driver properties aside).
+     * Not listed: the transaction properties, which map to the {@code quarkus.transaction-manager.*} properties shared
+     * with the other transactional datasources and JMS, and the repository properties, which create auxiliary beans.
+     */
+    private static final List<ConfigModule> REPLACED_BY_TRANSLATION = List.of(
+            DB_KIND,
+            JDBC_URL,
+            USERNAME,
+            PASSWORD,
+            INITIAL_SIZE,
+            MIN_SIZE,
+            MAX_SIZE,
+            ACQUISITION_TIMEOUT_SECONDS,
+            VALIDATION_TIMEOUT_SECONDS,
+            LEAK_TIMEOUT_MINUTES);
 
     @Override
     public String modulePrefix() {
@@ -123,6 +152,13 @@ public class JdbcModuleDescriptor implements ForageModuleDescriptor<DataSourceFa
         }
 
         return props;
+    }
+
+    @Override
+    public boolean replacedByTranslation(String prefix, DataSourceFactoryConfig config, String propertyName) {
+        return DataSourceFactoryConfig.isDriverPropertyKey(propertyName)
+                || REPLACED_BY_TRANSLATION.stream()
+                        .anyMatch(m -> m.asNamed(prefix).match(propertyName));
     }
 
     /**

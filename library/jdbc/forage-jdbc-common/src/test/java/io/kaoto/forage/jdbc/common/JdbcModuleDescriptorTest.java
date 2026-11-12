@@ -162,4 +162,30 @@ class JdbcModuleDescriptorTest {
             System.clearProperty("forage.jdbc.transaction.enabled");
         }
     }
+
+    @Test
+    void translationReplacesConnectionPoolAndDriverPropertiesOnly() {
+        JdbcModuleDescriptor descriptor = new JdbcModuleDescriptor();
+        DataSourceFactoryConfig config = new DataSourceFactoryConfig("ds1");
+
+        assertThat(descriptor.replacedByTranslation("ds1", config, "forage.ds1.jdbc.url"))
+                .isTrue();
+        assertThat(descriptor.replacedByTranslation("ds1", config, "forage.ds1.jdbc.pool.max.size"))
+                .isTrue();
+        assertThat(descriptor.replacedByTranslation("ds1", config, "forage.ds1.jdbc.properties.sslConnection"))
+                .isTrue();
+        // Shared quarkus.transaction-manager.* properties, auxiliary beans, no Quarkus property
+        assertThat(descriptor.replacedByTranslation("ds1", config, "forage.ds1.jdbc.transaction.enabled"))
+                .isFalse();
+        assertThat(descriptor.replacedByTranslation("ds1", config, "forage.ds1.jdbc.aggregation.repository.name"))
+                .isFalse();
+        assertThat(descriptor.replacedByTranslation("ds1", config, "forage.ds1.jdbc.idempotent.repository.enabled"))
+                .isFalse();
+        assertThat(descriptor.replacedByTranslation(
+                        "ds1", config, "forage.ds1.jdbc.pool.idle.validation.timeout.minutes"))
+                .isFalse();
+        // Another datasource's property
+        assertThat(descriptor.replacedByTranslation("ds1", config, "forage.jdbc.url"))
+                .isFalse();
+    }
 }

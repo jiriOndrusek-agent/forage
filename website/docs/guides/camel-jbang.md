@@ -126,6 +126,35 @@ Export your project to Spring Boot or Quarkus with all Forage dependencies inclu
     camel export --runtime=quarkus --directory=./my-app
     ```
 
+{% raw %}
+### Quarkus Properties
+
+The Quarkus export writes the JDBC datasources and the default Artemis JMS connection factory as Quarkus
+properties (`quarkus.datasource.*`, `quarkus.artemis.*`, `quarkus.pooled-jms.*`) in
+`src/main/resources/META-INF/microprofile-config.properties`, instead of their `forage.*` properties. A comment above
+each block lists the original properties. That file has a lower ordinal (100) than `application.properties`, so the
+`quarkus.*` values set there still win.
+
+A configuration keeps its `forage.*` properties, which the Forage Quarkus extension handles at runtime, when:
+
+- a property has no 1:1 Quarkus equivalent, for example transactions, aggregation and idempotent repositories,
+  named or IBM MQ JMS connection factories.
+- a value uses a `{{...}}` placeholder, which Quarkus cannot resolve, or non-ASCII characters. `${...}` expressions
+  are copied as they are.
+- a value is profile-specific (`application-<profile>.properties`, `%<profile>.forage.*`), or comes from outside the
+  exported files: an environment variable, a system property or `~/.forage`.
+- it is the default configuration of a module that also has named ones.
+
+The export prints a warning for each of them. The other modules always keep their `forage.*` properties.
+
+Override translated values with Quarkus configuration, for example `QUARKUS_DATASOURCE__DS1__PASSWORD`. `FORAGE_*`
+variables still override them only when they set the whole configuration (e.g. `FORAGE_DS1_JDBC_DB_KIND`, `_URL`,
+`_USERNAME` and `_PASSWORD`): with only some of them, Forage finds an incomplete configuration and fails at startup,
+with an error that points to the Quarkus configuration.
+Even then, Forage's runtime configuration takes over that datasource, so the other translated settings (e.g. pool
+`max-size`) fall back to Forage defaults. Set them through `FORAGE_*` variables too, or override with `QUARKUS_*`.
+{% endraw %}
+
 ## Testing Connections
 
 Verify datasource connectivity without starting routes:

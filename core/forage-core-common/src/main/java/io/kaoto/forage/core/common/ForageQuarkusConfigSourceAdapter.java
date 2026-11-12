@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import io.kaoto.forage.core.util.config.Config;
 import io.kaoto.forage.core.util.config.ConfigHelper;
 import io.kaoto.forage.core.util.config.ConfigStore;
+import io.kaoto.forage.core.util.config.MissingConfigException;
 import io.kaoto.forage.core.util.config.PlaceholderResolver;
 import io.kaoto.forage.core.util.config.PropertyFileLocator;
 import io.kaoto.forage.core.util.config.UnsupportedPlaceholderFunctionResolver;
@@ -78,14 +79,14 @@ public abstract class ForageQuarkusConfigSourceAdapter<C extends Config> impleme
         if (!prefixes.isEmpty()) {
             for (String name : prefixes) {
                 C config = desc.createConfig(name);
-                configuration.putAll(desc.translateProperties(name, config));
+                configuration.putAll(translateProperties(desc, name, config));
                 registerContextProperties(context, config, desc.modulePrefix(), name);
             }
         } else if (!ConfigStore.getInstance()
                         .readPrefixes(defaultConfig, defaultRegexp)
                         .isEmpty()
                 || !discoverPrefixesFromContext(context, defaultRegexp).isEmpty()) {
-            configuration.putAll(desc.translateProperties(null, defaultConfig));
+            configuration.putAll(translateProperties(desc, null, defaultConfig));
             registerContextProperties(context, defaultConfig, desc.modulePrefix(), null);
         } else {
             LOG.trace("No {} config found.", desc.modulePrefix());
@@ -97,6 +98,26 @@ public abstract class ForageQuarkusConfigSourceAdapter<C extends Config> impleme
 
         String sourceName = "Forage" + capitalize(desc.modulePrefix()) + "TranslatedConfigSource";
         return Collections.singletonList(new ForageTranslatedConfigSource(sourceName, configuration));
+    }
+
+    /**
+     * Adds a hint to a missing configuration: {@code camel export --runtime=quarkus} replaces the {@code forage.*}
+     * properties of some modules with {@code quarkus.*} properties, so a {@code FORAGE_*} environment variable that
+     * overrides only part of them makes Forage find an incomplete configuration.
+     */
+    private static <C extends Config> Map<String, String> translateProperties(
+            ForageModuleDescriptor<C, ?> desc, String name, C config) {
+        try {
+            return desc.translateProperties(name, config);
+        } catch (MissingConfigException e) {
+            String properties = "forage." + (name != null ? name + "." : "") + desc.modulePrefix() + ".*";
+            throw new MissingConfigException(
+                    e.getMessage() + ". If the application was exported with camel export --runtime=quarkus, its "
+                            + properties + " properties may have been translated to quarkus.* properties: override"
+                            + " those with Quarkus configuration (e.g. QUARKUS_* environment variables) instead of"
+                            + " FORAGE_* environment variables.",
+                    e);
+        }
     }
 
     /**

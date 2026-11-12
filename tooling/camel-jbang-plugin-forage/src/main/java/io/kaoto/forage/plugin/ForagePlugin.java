@@ -1,13 +1,22 @@
 package io.kaoto.forage.plugin;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.ServiceConfigurationError;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
 import org.apache.camel.dsl.jbang.core.common.CamelJBangPlugin;
+import org.apache.camel.dsl.jbang.core.common.CommandLineHelper;
 import org.apache.camel.dsl.jbang.core.common.Plugin;
 import org.apache.camel.dsl.jbang.core.common.PluginExporter;
 import org.apache.camel.dsl.jbang.core.common.PluginRunCustomizer;
@@ -18,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.kaoto.forage.core.common.ExportCustomizer;
 import io.kaoto.forage.core.common.RuntimeType;
+import io.kaoto.forage.core.util.config.ConfigStore;
 import io.kaoto.forage.plugin.config.ConfigCommand;
 import io.kaoto.forage.plugin.config.ConfigReadCommand;
 import io.kaoto.forage.plugin.config.ConfigWriteCommand;
@@ -27,6 +37,8 @@ import picocli.CommandLine;
 public class ForagePlugin implements Plugin {
 
     private static final Logger LOG = LoggerFactory.getLogger(ForagePlugin.class);
+
+    static final String MP_CONFIG_PROPERTIES = "META-INF/microprofile-config.properties";
 
     @Override
     public void customize(CommandLine commandLine, CamelJBangMain main) {
@@ -53,8 +65,14 @@ public class ForagePlugin implements Plugin {
     @Override
     public Optional<PluginExporter> getExporter() {
         return Optional.of(new PluginExporter() {
+
             @Override
             public Set<String> getDependencies(org.apache.camel.dsl.jbang.core.common.RuntimeType runtimeType) {
+                if (RuntimeType.fromValue(runtimeType.name()) == RuntimeType.QUARKUS) {
+                    // mirrors ExportBaseCommand.BUILD_DIR (protected, not accessible from plugins)
+                    Path buildDir = Path.of(CommandLineHelper.CAMEL_JBANG_WORK_DIR, "work");
+                    translateForageProperties(buildDir);
+                }
                 // gather dependencies across all (enabled) export customizers for the specific runtime
                 return ExportHelper.getAllCustomizers()
                         .filter(ExportCustomizer::isEnabled)
@@ -74,6 +92,191 @@ public class ForagePlugin implements Plugin {
                 // This exporter contributes only runtime dependencies, not source files.
             }
         });
+    }
+
+    static void translateForageProperties(Path buildDir) {
+        // Also called by the silent run that precedes the export, when the build directory does not exist yet
+        Path appPropsPath = buildDir.resolve("src/main/resources/application.properties");
+        if (!Files.exists(appPropsPath)) {
+            LOG.debug("application.properties not found at {} — skipping property translation", appPropsPath);
+            return;
+        }
+
+        // The translation must never fail the export: the forage properties then stay as they are
+        Printer printer = new Printer.SystemOutPrinter();
+        QuarkusPropertyTranslator.TranslationResult result;
+        try {
+            // Translate the exported properties files, which also hold the --property values of the export
+            result =
+                    QuarkusPropertyTranslator.translate(appPropsPath.getParent().toFile());
+        } catch (IOException | RuntimeException | LinkageError | ServiceConfigurationError e) {
+            printer.println("⚠️  Quarkus export: forage properties not translated: " + e.getMessage());
+            return;
+        } finally {
+            // translate() populates the global ConfigStore singleton via config.register() — clean up
+            // so scanned values don't leak into subsequent operations in the same JVM
+            ConfigStore.getInstance().reload();
+        }
+
+        result.warnings().forEach(warning -> printer.println("⚠️  Quarkus export: " + warning));
+
+        if (result.isEmpty()) {
+            return;
+        }
+
+        try {
+            rewriteApplicationProperties(appPropsPath, result);
+            LOG.info("Translated {} forage properties to Quarkus-native format", result.propertyCount());
+        } catch (IOException | RuntimeException | LinkageError | ServiceConfigurationError e) {
+            printer.println("⚠️  Quarkus export: forage properties not translated: " + e.getMessage());
+        }
+    }
+
+    static void rewriteApplicationProperties(Path appPropsPath, QuarkusPropertyTranslator.TranslationResult result)
+            throws IOException {
+        Set<String> keysToRemove = result.translatedForageKeys();
+        // Read and write as ISO-8859-1, which keeps the bytes of the other lines whatever the file encoding is.
+        // Every file is encoded before any is written, so that a failure leaves the export unchanged.
+        Map<Path, byte[]> rewritten = new LinkedHashMap<>();
+
+        // The other properties files (e.g. forage-datasource-factory.properties) are exported as they are
+        List<Path> otherFiles;
+        try (Stream<Path> files = Files.list(appPropsPath.getParent())) {
+            otherFiles = files.filter(f -> {
+                        String name = f.getFileName().toString();
+                        return name.endsWith(".properties") && !name.startsWith("application");
+                    })
+                    .toList();
+        }
+        for (Path file : otherFiles) {
+            List<String> lines = Files.readAllLines(file, StandardCharsets.ISO_8859_1);
+            List<String> kept = withoutKeys(lines, keysToRemove);
+            if (kept.size() != lines.size()) {
+                rewritten.put(file, toBytes(kept));
+            }
+        }
+
+        // Keep every line except those whose key was translated to Quarkus format
+        List<String> appLines =
+                withoutKeys(Files.readAllLines(appPropsPath, StandardCharsets.ISO_8859_1), keysToRemove);
+        rewritten.put(appPropsPath, toBytes(appLines));
+
+        // Append each translation group, with a header showing the original forage properties, to
+        // microprofile-config.properties: at ordinal 100, below the user's configuration (250+) and the runtime
+        // translation of FORAGE_* environment variables by Forage (240), so both still override it
+        Path mpConfigPath = appPropsPath.resolveSibling(MP_CONFIG_PROPERTIES);
+        List<String> mpConfigLines = Files.exists(mpConfigPath)
+                ? new ArrayList<>(Files.readAllLines(mpConfigPath, StandardCharsets.ISO_8859_1))
+                : new ArrayList<>();
+        result.groups().stream().flatMap(ForagePlugin::translationGroupToLines).forEach(mpConfigLines::add);
+        rewritten.put(mpConfigPath, toBytes(mpConfigLines));
+
+        Files.createDirectories(mpConfigPath.getParent());
+        for (Map.Entry<Path, byte[]> file : rewritten.entrySet()) {
+            Files.write(file.getKey(), file.getValue());
+        }
+    }
+
+    /**
+     * Encodes the lines as ISO-8859-1. Written keys and values are escaped to ASCII, so only a character of a
+     * comment can be replaced by {@code ?}.
+     */
+    private static byte[] toBytes(List<String> lines) {
+        StringBuilder content = new StringBuilder();
+        lines.forEach(line -> content.append(line).append(System.lineSeparator()));
+        return content.toString().getBytes(StandardCharsets.ISO_8859_1);
+    }
+
+    /**
+     * Removes the properties with the given keys, continuation lines included, reading the lines as
+     * {@link java.util.Properties} does.
+     */
+    private static List<String> withoutKeys(List<String> lines, Set<String> keysToRemove) {
+        List<String> kept = new ArrayList<>();
+        boolean continuation = false;
+        boolean removing = false;
+        for (String line : lines) {
+            boolean comment = false;
+            if (!continuation) {
+                String trimmed = line.stripLeading();
+                comment = trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith("!");
+                removing = !comment && keysToRemove.contains(extractPropertyKey(trimmed));
+            }
+            if (!removing) {
+                kept.add(line);
+            }
+            // A line ending with an odd number of backslashes continues on the next one
+            int backslashes = 0;
+            for (int i = line.length() - 1; i >= 0 && line.charAt(i) == '\\'; i--) {
+                backslashes++;
+            }
+            continuation = !comment && backslashes % 2 == 1;
+        }
+        return kept;
+    }
+
+    /**
+     * Extracts the key of a property line without its leading whitespace: up to the first unescaped
+     * {@code =}, {@code :} or whitespace.
+     */
+    private static String extractPropertyKey(String line) {
+        int end = 0;
+        while (end < line.length()) {
+            char c = line.charAt(end);
+            if (c == '\\') {
+                end += 2;
+            } else if (c == '=' || c == ':' || Character.isWhitespace(c)) {
+                break;
+            } else {
+                end++;
+            }
+        }
+        return line.substring(0, Math.min(end, line.length()));
+    }
+
+    /**
+     * Escapes a key or a value for a properties file, as {@link java.util.Properties#store} does.
+     */
+    private static String escape(String text, boolean key) {
+        StringBuilder escaped = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '\\' -> escaped.append("\\\\");
+                case '\t' -> escaped.append("\\t");
+                case '\n' -> escaped.append("\\n");
+                case '\r' -> escaped.append("\\r");
+                case '\f' -> escaped.append("\\f");
+                case ' ' -> escaped.append(key || i == 0 ? "\\ " : " ");
+                case '=', ':', '#', '!' -> escaped.append(key ? "\\" : "").append(c);
+                default -> {
+                    if (c < 0x20 || c > 0x7e) {
+                        escaped.append(String.format("\\u%04X", (int) c));
+                    } else {
+                        escaped.append(c);
+                    }
+                }
+            }
+        }
+        return escaped.toString();
+    }
+
+    private static Stream<String> translationGroupToLines(QuarkusPropertyTranslator.TranslationGroup group) {
+        Stream.Builder<String> lines = Stream.builder();
+        lines.add("");
+        if (group.prefix() != null) {
+            lines.add("# Properties for " + group.moduleType() + " with prefix '" + group.prefix() + "'");
+        } else {
+            lines.add("# Properties for " + group.moduleType());
+        }
+        lines.add("# Translated from:");
+        new TreeMap<>(group.sourceProperties()).forEach((k, v) -> lines.add("#   " + k + "=" + escape(v, false)));
+        new TreeMap<>(group.properties()).forEach((k, v) -> {
+            if (v != null) {
+                lines.add(escape(k, true) + "=" + escape(v, false));
+            }
+        });
+        return lines.build();
     }
 
     private void beforeRun(KameletMain main, List<String> files) {
