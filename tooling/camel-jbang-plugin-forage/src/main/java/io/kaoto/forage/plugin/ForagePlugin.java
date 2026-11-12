@@ -1,6 +1,7 @@
 package io.kaoto.forage.plugin;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.ServiceConfigurationError;
 import java.util.Set;
 import java.util.TreeMap;
@@ -168,10 +170,20 @@ public class ForagePlugin implements Plugin {
         List<String> mpConfigLines = Files.exists(mpConfigPath)
                 ? new ArrayList<>(Files.readAllLines(mpConfigPath, StandardCharsets.ISO_8859_1))
                 : new ArrayList<>();
-        result.groups().stream().flatMap(ForagePlugin::translationGroupToLines).forEach(mpConfigLines::add);
-        rewritten.put(mpConfigPath, toBytes(mpConfigLines));
+        // Keys the user already defined there are not generated, as a later definition would override theirs
+        Properties existing = new Properties();
+        if (Files.exists(mpConfigPath)) {
+            try (InputStream in = Files.newInputStream(mpConfigPath)) {
+                existing.load(in);
+            }
+        }
+        result.groups().stream()
+                .flatMap(group -> translationGroupToLines(group, existing.stringPropertyNames()))
+                .forEach(mpConfigLines::add);
 
+        // The destination is written first, so that a failure leaves the forage keys in the source files
         Files.createDirectories(mpConfigPath.getParent());
+        Files.write(mpConfigPath, toBytes(mpConfigLines));
         for (Map.Entry<Path, byte[]> file : rewritten.entrySet()) {
             Files.write(file.getKey(), file.getValue());
         }
@@ -261,7 +273,8 @@ public class ForagePlugin implements Plugin {
         return escaped.toString();
     }
 
-    private static Stream<String> translationGroupToLines(QuarkusPropertyTranslator.TranslationGroup group) {
+    private static Stream<String> translationGroupToLines(
+            QuarkusPropertyTranslator.TranslationGroup group, Set<String> existingKeys) {
         Stream.Builder<String> lines = Stream.builder();
         lines.add("");
         if (group.prefix() != null) {
@@ -272,7 +285,7 @@ public class ForagePlugin implements Plugin {
         lines.add("# Translated from:");
         new TreeMap<>(group.sourceProperties()).forEach((k, v) -> lines.add("#   " + k + "=" + escape(v, false)));
         new TreeMap<>(group.properties()).forEach((k, v) -> {
-            if (v != null) {
+            if (v != null && !existingKeys.contains(k)) {
                 lines.add(escape(k, true) + "=" + escape(v, false));
             }
         });

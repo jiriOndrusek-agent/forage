@@ -16,6 +16,8 @@ import io.kaoto.forage.core.util.config.ConfigStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class ForagePluginRewriteTest {
 
@@ -488,6 +490,59 @@ class ForagePluginRewriteTest {
         assertThat(mpConfigLines())
                 .startsWith("my.key=value")
                 .contains("quarkus.datasource.\"dataSource\".db-kind=postgresql");
+    }
+
+    @Test
+    void existingMicroprofileConfigKeysAreNotOverridden() throws IOException {
+        Path appProps = writeProps("forage.jdbc.db.kind=postgresql", "forage.jdbc.username=admin");
+        Path mpConfig = Files.createDirectories(tempDir.resolve("META-INF")).resolve("microprofile-config.properties");
+        Files.write(mpConfig, List.of("quarkus.datasource.\"dataSource\".db-kind=mysql"));
+
+        ForagePlugin.rewriteApplicationProperties(
+                appProps,
+                result(
+                        group(
+                                "jdbc",
+                                null,
+                                Map.of("forage.jdbc.db.kind", "postgresql", "forage.jdbc.username", "admin"),
+                                Map.of(
+                                        "quarkus.datasource.\"dataSource\".db-kind",
+                                        "postgresql",
+                                        "quarkus.datasource.\"dataSource\".username",
+                                        "admin")),
+                        Set.of("forage.jdbc.db.kind", "forage.jdbc.username")));
+
+        assertThat(mpConfigLines())
+                .contains("quarkus.datasource.\"dataSource\".db-kind=mysql")
+                .contains("quarkus.datasource.\"dataSource\".username=admin")
+                .doesNotContain("quarkus.datasource.\"dataSource\".db-kind=postgresql");
+    }
+
+    @Test
+    void sourcesKeptWhenMicroprofileConfigWriteFails() throws IOException {
+        List<String> original = List.of("forage.jdbc.db.kind=postgresql");
+        Path appProps = writeProps(original.toArray(String[]::new));
+        Path mpConfig = Files.createDirectories(tempDir.resolve("META-INF")).resolve("microprofile-config.properties");
+        Files.write(mpConfig, List.of("my.key=value"));
+        assumeTrue(mpConfig.toFile().setWritable(false) && !Files.isWritable(mpConfig));
+
+        try {
+            assertThatThrownBy(() -> ForagePlugin.rewriteApplicationProperties(
+                            appProps,
+                            result(
+                                    group(
+                                            "jdbc",
+                                            null,
+                                            Map.of("forage.jdbc.db.kind", "postgresql"),
+                                            Map.of("quarkus.datasource.\"dataSource\".db-kind", "postgresql")),
+                                    Set.of("forage.jdbc.db.kind"))))
+                    .isInstanceOf(IOException.class);
+        } finally {
+            mpConfig.toFile().setWritable(true);
+        }
+
+        assertThat(Files.readAllLines(appProps)).isEqualTo(original);
+        assertThat(mpConfigLines()).containsExactly("my.key=value");
     }
 
     private List<String> mpConfigLines() throws IOException {
