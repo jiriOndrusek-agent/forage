@@ -25,6 +25,7 @@ import io.kaoto.forage.core.util.config.ConfigModule;
 import io.kaoto.forage.core.util.config.ConfigStore;
 import io.kaoto.forage.core.util.config.MissingConfigException;
 import io.kaoto.forage.core.util.config.PropertyFileLocator;
+import io.kaoto.forage.jdbc.common.DataSourceFactoryConfig;
 import io.kaoto.forage.jdbc.common.JdbcModuleDescriptor;
 import io.kaoto.forage.jms.common.ConnectionFactoryConfig;
 import io.kaoto.forage.jms.common.JmsModuleDescriptor;
@@ -171,10 +172,9 @@ final class QuarkusNativeExport {
             } else {
                 C config = descriptor.createConfig(name);
                 useOnly(config, keyPrefix, values);
+                // the aggregation repository needs transactions, rejected below
                 boolean repositories =
-                        !descriptor.auxiliaryBeans(name, beanName -> null).isEmpty();
-                // auxiliaryBeans creates its own configuration, which reloads the export environment
-                useOnly(config, keyPrefix, values);
+                        config instanceof DataSourceFactoryConfig jdbc && jdbc.enableIdempotentRepository();
                 Map<String, String> translated = new TreeMap<>();
                 if (repositories) {
                     reason = "'" + label + "' uses Forage repositories";
@@ -254,7 +254,8 @@ final class QuarkusNativeExport {
     }
 
     /**
-     * Rewrites the exported resources: removes the translated Forage keys from the {@code *.properties} files and adds
+     * Rewrites the exported resources: removes the translated Forage keys from the {@code *.properties} files (and the
+     * files left empty) and adds
      * the Quarkus properties to {@code application.properties}, keeping the keys it already defines.
      */
     static void write(Result result, Path resourcesDir) throws IOException {
@@ -266,8 +267,17 @@ final class QuarkusNativeExport {
             files = list.filter(f -> f.toString().endsWith(".properties")).toList();
         }
         for (Path file : files) {
-            List<String> lines = removeKeys(Files.readAllLines(file, StandardCharsets.UTF_8), result.forageKeys());
-            Files.write(file, lines, StandardCharsets.UTF_8);
+            List<String> original = Files.readAllLines(file, StandardCharsets.UTF_8);
+            List<String> lines = removeKeys(original, result.forageKeys());
+            if (lines.size() == original.size()) {
+                continue;
+            }
+            if (lines.stream().allMatch(String::isBlank) && !file.endsWith("application.properties")) {
+                // only translated keys: the file is not needed
+                Files.delete(file);
+            } else {
+                Files.write(file, lines, StandardCharsets.UTF_8);
+            }
         }
 
         Path application = resourcesDir.resolve("application.properties");

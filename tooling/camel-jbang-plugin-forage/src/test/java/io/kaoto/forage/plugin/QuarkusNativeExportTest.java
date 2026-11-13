@@ -31,6 +31,7 @@ class QuarkusNativeExportTest {
     @AfterEach
     void tearDown() {
         System.clearProperty("forage.ds1.jdbc.username");
+        System.clearProperty("forage.ds1.jdbc.idempotent.repository.enabled");
         ConfigStore.getInstance().reload();
     }
 
@@ -157,6 +158,25 @@ class QuarkusNativeExportTest {
     }
 
     @Test
+    void keepsProjectIdempotentRepositoryDisabledAtExportTime() {
+        System.setProperty("forage.ds1.jdbc.idempotent.repository.enabled", "false");
+
+        assertNotTranslated(
+                QuarkusNativeExport.translate(properties(DS1 + "forage.ds1.jdbc.idempotent.repository.enabled=true\n")),
+                "'ds1' uses Forage repositories");
+    }
+
+    @Test
+    void ignoresIdempotentRepositoryEnabledAtExportTime() {
+        System.setProperty("forage.ds1.jdbc.idempotent.repository.enabled", "true");
+
+        QuarkusNativeExport.Result result = QuarkusNativeExport.translate(properties(DS1));
+
+        assertThat(result.modules()).containsExactly("jdbc");
+        assertThat(result.properties()).containsEntry("quarkus.datasource.\"ds1\".jdbc.min-size", "4");
+    }
+
+    @Test
     void keepsNamedJmsBrokers() {
         assertNotTranslated(
                 QuarkusNativeExport.translate(
@@ -221,6 +241,17 @@ class QuarkusNativeExportTest {
         assertThat(application.stringPropertyNames()).noneMatch(key -> key.startsWith("forage."));
         assertThat(Files.readString(dir.resolve("forage-datasource-factory.properties")))
                 .isEqualTo("# datasource\n");
+    }
+
+    @Test
+    void writeDeletesFilesLeftEmpty() throws IOException {
+        Files.writeString(dir.resolve("forage-datasource-factory.properties"), DS1);
+
+        QuarkusNativeExport.write(QuarkusNativeExport.translate(QuarkusNativeExport.load(dir)), dir);
+
+        assertThat(dir.resolve("forage-datasource-factory.properties")).doesNotExist();
+        assertThat(read(dir.resolve("application.properties")))
+                .containsEntry("quarkus.datasource.\"ds1\".jdbc.min-size", "4");
     }
 
     @Test

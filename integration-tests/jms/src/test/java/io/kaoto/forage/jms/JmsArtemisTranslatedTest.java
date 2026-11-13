@@ -16,6 +16,7 @@ import io.kaoto.forage.integration.tests.PropertiesTemplateHelper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * A default Artemis connection factory without transactions: on Quarkus, the export translates its whole
@@ -60,6 +61,12 @@ public class JmsArtemisTranslatedTest implements ForageIntegrationTest {
             ProcessAndOutput process =
                     context.getVariable(INTEGRATION_NAME + ":process:" + pid, ProcessAndOutput.class);
             assertFalse(process.getOutput().contains("Unrecognized configuration key"), process.getOutput());
+            if ("quarkus"
+                    .equals(System.getProperty(
+                            IntegrationTestSetupExtension.RUNTIME_PROPERTY,
+                            System.getenv(IntegrationTestSetupExtension.RUNTIME_PROPERTY)))) {
+                assertTrue(process.getOutput().contains("exported as Quarkus configuration"), process.getOutput());
+            }
         });
     }
 }

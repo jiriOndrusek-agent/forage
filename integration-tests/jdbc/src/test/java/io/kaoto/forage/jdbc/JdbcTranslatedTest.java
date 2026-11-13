@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import org.citrusframework.annotations.CitrusTest;
+import org.citrusframework.jbang.ProcessAndOutput;
 import org.citrusframework.junit.jupiter.CitrusSupport;
 import org.citrusframework.spi.Resource;
 import io.kaoto.forage.integration.tests.ForageIntegrationTest;
@@ -13,6 +14,7 @@ import io.kaoto.forage.integration.tests.PropertiesTemplateHelper;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * A plain datasource, without transaction or other properties the Quarkus export keeps as {@code forage.*}: on
@@ -52,5 +54,16 @@ public class JdbcTranslatedTest implements ForageIntegrationTest {
                 .verify()
                 .integration(INTEGRATION_NAME)
                 .waitForLogMessage("from translated ds1 - [{id=1, content=postgres 1}, {id=2, content=postgres 2}]"));
+        runner.then(context -> {
+            if ("quarkus"
+                    .equals(System.getProperty(
+                            IntegrationTestSetupExtension.RUNTIME_PROPERTY,
+                            System.getenv(IntegrationTestSetupExtension.RUNTIME_PROPERTY)))) {
+                Long pid = context.getVariable(INTEGRATION_NAME + ":pid", Long.class);
+                ProcessAndOutput process =
+                        context.getVariable(INTEGRATION_NAME + ":process:" + pid, ProcessAndOutput.class);
+                assertTrue(process.getOutput().contains("exported as Quarkus configuration"), process.getOutput());
+            }
+        });
     }
 }
