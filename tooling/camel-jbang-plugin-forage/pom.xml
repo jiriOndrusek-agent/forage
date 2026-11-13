@@ -39,6 +39,18 @@
         </dependency>
 
         <dependency>
+            <groupId>io.kaoto.forage</groupId>
+            <artifactId>forage-jdbc-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>io.kaoto.forage</groupId>
+            <artifactId>forage-jms-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
         </dependency>
