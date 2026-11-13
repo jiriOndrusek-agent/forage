@@ -1,0 +1,56 @@
+package io.kaoto.forage.jdbc;
+
+import java.util.Map;
+import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import org.citrusframework.annotations.CitrusTest;
+import org.citrusframework.junit.jupiter.CitrusSupport;
+import org.citrusframework.spi.Resource;
+import io.kaoto.forage.integration.tests.ForageIntegrationTest;
+import io.kaoto.forage.integration.tests.ForageTestCaseRunner;
+import io.kaoto.forage.integration.tests.IntegrationTestSetupExtension;
+import io.kaoto.forage.integration.tests.PropertiesTemplateHelper;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+
+/**
+ * A plain datasource, without transaction or other properties the Quarkus export keeps as {@code forage.*}: on
+ * Quarkus, the export translates its whole configuration to {@code quarkus.datasource.*} properties.
+ */
+@CitrusSupport
+@ExtendWith(IntegrationTestSetupExtension.class)
+public class JdbcTranslatedTest implements ForageIntegrationTest {
+
+    private static final String INTEGRATION_NAME = "jdbc-translated";
+
+    @Override
+    public String runBeforeAll(ForageTestCaseRunner runner, Consumer<AutoCloseable> afterAll) {
+        Resource dynamicProperties = PropertiesTemplateHelper.createFromTemplate(
+                classResource("forage-datasource-factory.properties.template"),
+                Map.of(
+                        "forage\\.ds1\\.jdbc\\.url=.*",
+                        Matcher.quoteReplacement("forage.ds1.jdbc.url="
+                                + JdbcContainers.postgres().getJdbcUrl())),
+                afterAll);
+
+        runner.when(camel().cli()
+                .custom("forage", "run")
+                .processName(INTEGRATION_NAME)
+                .addResource(dynamicProperties)
+                .addResource(classResource("route.camel.yaml"))
+                .autoRemove(false)
+                .dumpIntegrationOutput(true));
+
+        return INTEGRATION_NAME;
+    }
+
+    @Test
+    @CitrusTest()
+    public void translatedDataSource(ForageTestCaseRunner runner) {
+        runner.then(camel().cli()
+                .verify()
+                .integration(INTEGRATION_NAME)
+                .waitForLogMessage("from translated ds1 - [{id=1, content=postgres 1}, {id=2, content=postgres 2}]"));
+    }
+}
