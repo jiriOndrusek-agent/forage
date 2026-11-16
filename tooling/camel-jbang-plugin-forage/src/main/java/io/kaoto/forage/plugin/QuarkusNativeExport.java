@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
+import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
@@ -25,10 +26,6 @@ import io.kaoto.forage.core.util.config.ConfigModule;
 import io.kaoto.forage.core.util.config.ConfigStore;
 import io.kaoto.forage.core.util.config.MissingConfigException;
 import io.kaoto.forage.core.util.config.PropertyFileLocator;
-import io.kaoto.forage.jdbc.common.DataSourceFactoryConfig;
-import io.kaoto.forage.jdbc.common.JdbcModuleDescriptor;
-import io.kaoto.forage.jms.common.ConnectionFactoryConfig;
-import io.kaoto.forage.jms.common.JmsModuleDescriptor;
 
 /**
  * Translates, for {@code camel export --runtime=quarkus}, the Forage configurations that Quarkus extensions fully
@@ -36,21 +33,9 @@ import io.kaoto.forage.jms.common.JmsModuleDescriptor;
  *
  * <p>A module is translated all or nothing: if any of its configurations needs Forage at runtime (transactions,
  * auxiliary repositories, {@code {{...}}} placeholders, profile-specific values, ...), the whole module stays
- * {@code forage.*}.
+ * {@code forage.*}. Modules opt in with a {@link QuarkusNativeHook}.
  */
 final class QuarkusNativeExport {
-
-    /**
-     * The modules Quarkus covers natively. Named JMS brokers stay Forage: their per-broker components come from the
-     * Forage extension.
-     */
-    private static final List<NativeModule> MODULES = List.of(
-            new NativeModule(new JdbcModuleDescriptor(), true), new NativeModule(new JmsModuleDescriptor(), false));
-
-    private record NativeModule(ForageModuleDescriptor<?, ?> descriptor, boolean namedSupported) {}
-
-    /** The catalog group whose dependency (quarkus-pooled-jms) a pooled JMS connection factory needs. */
-    static final String JMS_POOL_GROUP = "jms-connection-pool";
 
     /**
      * @param properties the translated Quarkus properties
@@ -100,6 +85,14 @@ final class QuarkusNativeExport {
      * the export environment ({@code FORAGE_*}, {@code -Dforage.*}) are ignored.
      */
     static Result translate(Properties project) {
+        return translate(
+                project,
+                ServiceLoader.load(QuarkusNativeHook.class, QuarkusNativeExport.class.getClassLoader()).stream()
+                        .<QuarkusNativeHook<?>>map(ServiceLoader.Provider::get)
+                        .toList());
+    }
+
+    static Result translate(Properties project, List<QuarkusNativeHook<?>> hooks) {
         Properties base = new Properties();
         Properties profiled = new Properties();
         project.stringPropertyNames().forEach(key -> {
@@ -117,8 +110,8 @@ final class QuarkusNativeExport {
                 new LinkedHashSet<>(),
                 new ArrayList<>());
         try {
-            for (NativeModule module : MODULES) {
-                translate(module.descriptor(), module.namedSupported(), base, profiled, result);
+            for (QuarkusNativeHook<?> hook : hooks) {
+                translate(hook, base, profiled, result);
             }
         } finally {
             // drop the export-only values from the shared store
@@ -128,11 +121,8 @@ final class QuarkusNativeExport {
     }
 
     private static <C extends Config> void translate(
-            ForageModuleDescriptor<C, ?> descriptor,
-            boolean namedSupported,
-            Properties base,
-            Properties profiled,
-            Result result) {
+            QuarkusNativeHook<C> hook, Properties base, Properties profiled, Result result) {
+        ForageModuleDescriptor<C, ?> descriptor = hook.descriptor();
         String module = descriptor.modulePrefix();
         String namedRegexp = ConfigHelper.getNamedPropertyRegexp(module);
         String defaultRegexp = ConfigHelper.getDefaultPropertyRegexp(module);
@@ -149,8 +139,6 @@ final class QuarkusNativeExport {
             reason = "profile-specific values";
         } else if (!named.isEmpty() && hasDefault) {
             reason = "default and named configurations together";
-        } else if (!named.isEmpty() && !namedSupported) {
-            reason = "named configurations need the Forage extension";
         }
 
         Map<String, String> quarkus = new TreeMap<>();
@@ -172,12 +160,10 @@ final class QuarkusNativeExport {
             } else {
                 C config = descriptor.createConfig(name);
                 useOnly(config, keyPrefix, values);
-                // the aggregation repository needs transactions, rejected below
-                boolean repositories =
-                        config instanceof DataSourceFactoryConfig jdbc && jdbc.enableIdempotentRepository();
+                String unsupported = hook.unsupported(name, config);
                 Map<String, String> translated = new TreeMap<>();
-                if (repositories) {
-                    reason = "'" + label + "' uses Forage repositories";
+                if (unsupported != null) {
+                    reason = "'" + label + "' " + unsupported;
                 } else if (descriptor.transactionEnabled(config)) {
                     reason = "'" + label + "' uses transactions";
                 } else {
@@ -190,15 +176,8 @@ final class QuarkusNativeExport {
                         reason = "'" + label + "' has no Quarkus equivalent";
                     }
                 }
-                if (reason == null && config instanceof ConnectionFactoryConfig jms) {
-                    // pooling is on by default: quarkus-pooled-jms must be added, or its keys dropped
-                    if (jms.poolEnabled()) {
-                        groups.add(JMS_POOL_GROUP);
-                    } else {
-                        translated.keySet().removeIf(key -> key.startsWith("quarkus.pooled-jms."));
-                    }
-                }
                 if (reason == null) {
+                    groups.addAll(hook.adjust(config, translated));
                     quarkus.putAll(translated);
                     forageKeys.addAll(values.keySet());
                     instanceMessages.add(overrideMessage(module, label, keyPrefix, translated));

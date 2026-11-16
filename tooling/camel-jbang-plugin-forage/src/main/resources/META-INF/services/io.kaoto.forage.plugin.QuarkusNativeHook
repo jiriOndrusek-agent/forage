@@ -1,0 +1,2 @@
+io.kaoto.forage.plugin.JdbcQuarkusNativeHook
+io.kaoto.forage.plugin.JmsQuarkusNativeHook

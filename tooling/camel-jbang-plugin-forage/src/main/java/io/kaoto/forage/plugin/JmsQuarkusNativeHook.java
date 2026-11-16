@@ -1,0 +1,34 @@
+package io.kaoto.forage.plugin;
+
+import java.util.Map;
+import java.util.Set;
+import io.kaoto.forage.core.common.ForageModuleDescriptor;
+import io.kaoto.forage.jms.common.ConnectionFactoryConfig;
+import io.kaoto.forage.jms.common.JmsModuleDescriptor;
+
+public final class JmsQuarkusNativeHook implements QuarkusNativeHook<ConnectionFactoryConfig> {
+
+    /** The catalog group whose dependency (quarkus-pooled-jms) a pooled JMS connection factory needs. */
+    static final String POOL_GROUP = "jms-connection-pool";
+
+    @Override
+    public ForageModuleDescriptor<ConnectionFactoryConfig, ?> descriptor() {
+        return new JmsModuleDescriptor();
+    }
+
+    @Override
+    public String unsupported(String name, ConnectionFactoryConfig config) {
+        // per-broker components come from the Forage extension
+        return name != null ? "uses named configurations, which need the Forage extension" : null;
+    }
+
+    @Override
+    public Set<String> adjust(ConnectionFactoryConfig config, Map<String, String> translated) {
+        // pooling is on by default: quarkus-pooled-jms must be added, or its keys dropped
+        if (config.poolEnabled()) {
+            return Set.of(POOL_GROUP);
+        }
+        translated.keySet().removeIf(key -> key.startsWith("quarkus.pooled-jms."));
+        return Set.of();
+    }
+}

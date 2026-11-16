@@ -5,9 +5,13 @@ import java.io.StringReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import io.kaoto.forage.core.common.ForageModuleDescriptor;
 import io.kaoto.forage.core.util.config.ConfigStore;
+import io.kaoto.forage.jdbc.common.DataSourceFactoryConfig;
+import io.kaoto.forage.jdbc.common.JdbcModuleDescriptor;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -118,7 +122,7 @@ class QuarkusNativeExportTest {
                 .containsEntry("quarkus.artemis.url", "tcp://localhost:61616")
                 .containsEntry("quarkus.artemis.username", "artemis");
         assertThat(result.forageKeys()).hasSize(4);
-        assertThat(result.groups()).containsExactly(QuarkusNativeExport.JMS_POOL_GROUP);
+        assertThat(result.groups()).containsExactly(JmsQuarkusNativeHook.POOL_GROUP);
     }
 
     @Test
@@ -198,6 +202,50 @@ class QuarkusNativeExportTest {
                         forage.jms.broker.url=localhost(1414)
                         """)),
                 "no Quarkus equivalent");
+    }
+
+    @Test
+    void translatesModuleOfAnyHook() {
+        QuarkusNativeExport.Result result = QuarkusNativeExport.translate(properties(DS1), List.of(new FakeHook(null)));
+
+        assertThat(result.modules()).containsExactly("jdbc");
+        assertThat(result.properties()).containsEntry("fake", "test");
+        assertThat(result.groups()).containsExactly("fake-group");
+    }
+
+    @Test
+    void keepsModuleWithoutHook() {
+        QuarkusNativeExport.Result result = QuarkusNativeExport.translate(properties(DS1), List.of());
+
+        assertThat(result.properties()).isEmpty();
+        assertThat(result.modules()).isEmpty();
+        assertThat(result.messages()).isEmpty();
+    }
+
+    @Test
+    void keepsModuleWhenHookTurnsItOff() {
+        assertNotTranslated(
+                QuarkusNativeExport.translate(properties(DS1), List.of(new FakeHook("is off"))), "'ds1' is off");
+    }
+
+    /** JDBC under a hook that replaces the translation. */
+    private record FakeHook(String unsupported) implements QuarkusNativeHook<DataSourceFactoryConfig> {
+        @Override
+        public ForageModuleDescriptor<DataSourceFactoryConfig, ?> descriptor() {
+            return new JdbcModuleDescriptor();
+        }
+
+        @Override
+        public String unsupported(String name, DataSourceFactoryConfig config) {
+            return unsupported;
+        }
+
+        @Override
+        public Set<String> adjust(DataSourceFactoryConfig config, Map<String, String> translated) {
+            translated.clear();
+            translated.put("fake", config.username());
+            return Set.of("fake-group");
+        }
     }
 
     @Test
