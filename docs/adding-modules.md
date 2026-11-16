@@ -494,8 +494,9 @@ up in the Camel registry, which sees the Spring context, and skips it.
 
 ### 5d. Native Quarkus Export (optional)
 
-On `camel export --runtime=quarkus`, a module is written as native `quarkus.*` properties only if it has a
-`QuarkusNativeHook` in `tooling/camel-jbang-plugin-forage`, registered in `META-INF/services/io.kaoto.forage.plugin.QuarkusNativeHook`.
+On `camel export --runtime=quarkus`, a module is written as native `quarkus.*` properties only if its own module
+(e.g. `forage-<module>-common`) has a `io.kaoto.forage.core.common.QuarkusNativeHook`, registered in its
+`META-INF/services/io.kaoto.forage.core.common.QuarkusNativeHook`, and is on the plugin's runtime classpath.
 Without one the module stays `forage.*`. The keys come from `descriptor().translateProperties`; return a reason from
 `unsupported(name, config)` to keep a configuration on `forage.*`, and use `adjust` to tweak keys or enable catalog
 groups. See `JdbcQuarkusNativeHook` and `JmsQuarkusNativeHook`.

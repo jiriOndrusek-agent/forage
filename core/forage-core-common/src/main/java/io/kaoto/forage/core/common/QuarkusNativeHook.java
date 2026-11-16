@@ -1,8 +1,7 @@
-package io.kaoto.forage.plugin;
+package io.kaoto.forage.core.common;
 
 import java.util.Map;
 import java.util.Set;
-import io.kaoto.forage.core.common.ForageModuleDescriptor;
 import io.kaoto.forage.core.util.config.Config;
 
 /**

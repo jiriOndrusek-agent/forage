@@ -1,8 +1,7 @@
-package io.kaoto.forage.plugin;
+package io.kaoto.forage.jdbc.common;
 
 import io.kaoto.forage.core.common.ForageModuleDescriptor;
-import io.kaoto.forage.jdbc.common.DataSourceFactoryConfig;
-import io.kaoto.forage.jdbc.common.JdbcModuleDescriptor;
+import io.kaoto.forage.core.common.QuarkusNativeHook;
 
 public final class JdbcQuarkusNativeHook implements QuarkusNativeHook<DataSourceFactoryConfig> {
 

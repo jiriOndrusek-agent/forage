@@ -20,6 +20,7 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import io.kaoto.forage.core.common.ForageModuleDescriptor;
+import io.kaoto.forage.core.common.QuarkusNativeHook;
 import io.kaoto.forage.core.util.config.Config;
 import io.kaoto.forage.core.util.config.ConfigHelper;
 import io.kaoto.forage.core.util.config.ConfigModule;

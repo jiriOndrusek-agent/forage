@@ -1,10 +1,9 @@
-package io.kaoto.forage.plugin;
+package io.kaoto.forage.jms.common;
 
 import java.util.Map;
 import java.util.Set;
 import io.kaoto.forage.core.common.ForageModuleDescriptor;
-import io.kaoto.forage.jms.common.ConnectionFactoryConfig;
-import io.kaoto.forage.jms.common.JmsModuleDescriptor;
+import io.kaoto.forage.core.common.QuarkusNativeHook;
 
 public final class JmsQuarkusNativeHook implements QuarkusNativeHook<ConnectionFactoryConfig> {
 

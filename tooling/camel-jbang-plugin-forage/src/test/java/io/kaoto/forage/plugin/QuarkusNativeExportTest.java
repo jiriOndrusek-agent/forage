@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import io.kaoto.forage.core.common.ForageModuleDescriptor;
+import io.kaoto.forage.core.common.QuarkusNativeHook;
 import io.kaoto.forage.core.util.config.ConfigStore;
 import io.kaoto.forage.jdbc.common.DataSourceFactoryConfig;
 import io.kaoto.forage.jdbc.common.JdbcModuleDescriptor;
@@ -122,7 +123,7 @@ class QuarkusNativeExportTest {
                 .containsEntry("quarkus.artemis.url", "tcp://localhost:61616")
                 .containsEntry("quarkus.artemis.username", "artemis");
         assertThat(result.forageKeys()).hasSize(4);
-        assertThat(result.groups()).containsExactly(JmsQuarkusNativeHook.POOL_GROUP);
+        assertThat(result.groups()).containsExactly("jms-connection-pool");
     }
 
     @Test

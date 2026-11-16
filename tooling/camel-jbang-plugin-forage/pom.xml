@@ -38,16 +38,19 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- provide the QuarkusNativeHook implementations -->
         <dependency>
             <groupId>io.kaoto.forage</groupId>
             <artifactId>forage-jdbc-common</artifactId>
             <version>${project.version}</version>
+            <scope>runtime</scope>
         </dependency>
 
         <dependency>
             <groupId>io.kaoto.forage</groupId>
             <artifactId>forage-jms-common</artifactId>
             <version>${project.version}</version>
+            <scope>runtime</scope>
         </dependency>
 
         <dependency>
