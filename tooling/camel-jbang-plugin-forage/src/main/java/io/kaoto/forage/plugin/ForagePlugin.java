@@ -4,9 +4,14 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.Set;
+import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
 import org.apache.camel.dsl.jbang.core.common.CamelJBangPlugin;
@@ -30,6 +35,17 @@ import picocli.CommandLine;
 public class ForagePlugin implements Plugin {
 
     private static final Logger LOG = LoggerFactory.getLogger(ForagePlugin.class);
+
+    /** The {@code --property} values of the run in progress, taken by its dependency resolution. */
+    private static final AtomicReference<Map<String, String>> RUN_PROPERTIES = new AtomicReference<>();
+
+    /**
+     * The system properties with the Quarkus dependencies and the translation of the last run. Camel JBang loads the
+     * plugin in a new class loader for the export call, so static state does not reach it.
+     */
+    static final String RUN_DEPENDENCIES = "io.kaoto.forage.plugin.run.dependencies";
+
+    static final String RUN_TRANSLATION = "io.kaoto.forage.plugin.run.translation";
 
     @Override
     public void customize(CommandLine commandLine, CamelJBangMain main) {
@@ -58,16 +74,9 @@ public class ForagePlugin implements Plugin {
         return Optional.of(new PluginExporter() {
             @Override
             public Set<String> getDependencies(org.apache.camel.dsl.jbang.core.common.RuntimeType runtimeType) {
-                if (RuntimeType.fromValue(runtimeType.name()) == RuntimeType.QUARKUS) {
-                    exportQuarkusProperties();
-                }
-                // gather dependencies across all (enabled) export customizers for the specific runtime
-                return ExportHelper.getAllCustomizers()
-                        .filter(ExportCustomizer::isEnabled)
-                        .map(exportCustomizer ->
-                                exportCustomizer.resolveRuntimeDependencies(RuntimeType.fromValue(runtimeType.name())))
-                        .flatMap(Set::stream)
-                        .collect(Collectors.toSet());
+                return dependencies(
+                        RuntimeType.fromValue(runtimeType.name()),
+                        CommandLineHelper.getWorkDir().resolve("work/src/main/resources"));
             }
 
             @Override
@@ -83,27 +92,115 @@ public class ForagePlugin implements Plugin {
     }
 
     /**
-     * Writes the Forage configurations Quarkus extensions cover as {@code quarkus.*} properties into the project being
-     * exported. Camel JBang calls {@code getDependencies} after it has written the exported resources, and it has no
-     * hook for the exported properties.
+     * The dependencies of a Camel JBang run (also the silent run an export starts before it writes the resources):
+     * Quarkus configurations are translated from the project directory and the run's {@code --property} values, never
+     * from the export work directory (it may be left over). The export call writes that translation: Camel JBang
+     * rewrites the exported {@code application.properties} without escaping, so its values are only compared with what
+     * the run read. It fails if the silent run contributed a dependency it does not: Camel JBang adds those to the
+     * export.
+     *
+     * @param exportedResources the exported resources, written when no run is in progress
      */
-    private static void exportQuarkusProperties() {
-        Path resources = CommandLineHelper.getWorkDir().resolve("work/src/main/resources");
+    static Set<String> dependencies(RuntimeType runtime, Path exportedResources) {
+        Map<String, String> runProperties = RUN_PROPERTIES.getAndSet(null);
+        boolean run = runProperties != null;
+        // used once, also on failure: a later export in this JVM must not see them
+        String runDependencies = run ? null : System.clearProperty(RUN_DEPENDENCIES);
+        String runTranslation = run ? null : System.clearProperty(RUN_TRANSLATION);
+        QuarkusConfigExport.Run translation = null;
+        QuarkusConfigExport.Result quarkusExport = null;
+        if (runtime == RuntimeType.QUARKUS) {
+            if (run) {
+                translation = translateProject(runProperties);
+                quarkusExport = translation.result();
+            } else {
+                quarkusExport = exportQuarkusProperties(
+                        exportedResources, runTranslation != null ? QuarkusConfigExport.decode(runTranslation) : null);
+            }
+        }
+        // gather dependencies across all (enabled) export customizers for the specific runtime
+        Set<String> dependencies = ExportHelper.getAllCustomizers(quarkusExport)
+                .filter(ExportCustomizer::isEnabled)
+                .map(exportCustomizer -> exportCustomizer.resolveRuntimeDependencies(runtime))
+                .flatMap(Set::stream)
+                .collect(Collectors.toCollection(TreeSet::new));
+        if (runtime == RuntimeType.QUARKUS) {
+            if (run) {
+                System.setProperty(RUN_TRANSLATION, QuarkusConfigExport.encode(translation));
+                System.setProperty(RUN_DEPENDENCIES, String.join(",", dependencies));
+            } else if (runDependencies != null) {
+                checkRunDependencies(runDependencies, dependencies);
+            }
+        }
+        return dependencies;
+    }
+
+    /** Called when a Camel JBang run starts, with its {@code --property} values. */
+    static void runStarted(Map<String, String> properties) {
+        RUN_PROPERTIES.set(properties);
+    }
+
+    private static QuarkusConfigExport.Run translateProject(Map<String, String> runProperties) {
+        try {
+            return QuarkusConfigExport.run(
+                    CatalogDrivenExportCustomizer.workingDir().toPath(), runProperties);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to read the Forage properties", e);
+        }
+    }
+
+    private static void checkRunDependencies(String run, Set<String> dependencies) {
+        Set<String> extra = new TreeSet<>(List.of(run.split(",")));
+        extra.remove("");
+        extra.removeAll(dependencies);
+        if (!extra.isEmpty()) {
+            throw new IllegalStateException("The exported project would also get " + extra
+                    + " from the run of the project directory, which does not match the exported Forage "
+                    + "configuration. Set the Forage values in the project files instead of with --property.");
+        }
+    }
+
+    /**
+     * Writes what the run translated as {@code quarkus.*} properties into the project being exported. Camel JBang calls
+     * {@code getDependencies} after it has written the exported resources (including the {@code --property} values),
+     * and it has no hook for the exported properties.
+     *
+     * @param run what the run of the project directory translated, or {@code null} when the export reuses earlier run
+     *     data
+     * @return what was translated, or {@code null} when there are no exported resources
+     */
+    static QuarkusConfigExport.Result exportQuarkusProperties(Path resources, QuarkusConfigExport.Run run) {
         if (!Files.isDirectory(resources)) {
-            return;
+            return run != null ? run.result() : null;
         }
         try {
-            QuarkusConfigExport.Result result = QuarkusConfigExport.translate(QuarkusConfigExport.load(
-                    CatalogDrivenExportCustomizer.workingDir().toPath()));
-            QuarkusConfigExport.write(result, resources);
+            if (run == null) {
+                // nothing to compare the exported values with
+                QuarkusConfigExport.Run exported = QuarkusConfigExport.run(resources, Map.of());
+                if (!exported.result().modules().isEmpty()
+                        || !exported.application().isEmpty()) {
+                    throw new IllegalStateException("The export reuses the data of an earlier run, which may not "
+                            + "match the exported Forage configuration. Export again with --fresh.");
+                }
+                return exported.result();
+            }
+            QuarkusConfigExport.checkExported(run, resources);
+            QuarkusConfigExport.write(run.result(), resources);
             Printer printer = new Printer.SystemOutPrinter();
-            result.messages().forEach(printer::println);
+            run.result().messages().forEach(printer::println);
+            return run.result();
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write the Quarkus properties of the exported project", e);
         }
     }
 
     private void beforeRun(KameletMain main, List<String> files) {
+        Map<String, String> runProperties = new LinkedHashMap<>();
+        Properties arguments = main.getArgumentProperties();
+        if (arguments != null) {
+            arguments.stringPropertyNames().forEach(key -> runProperties.put(key, arguments.getProperty(key)));
+        }
+        runStarted(runProperties);
         resolveConfigDir(files);
         propagateProfile(main);
         addCatalogDrivenRepos(main);
