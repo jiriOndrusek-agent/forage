@@ -146,8 +146,13 @@ class CatalogDrivenExportCustomizerTest {
         Set<String> deps = customizer.resolveRuntimeDependencies(RuntimeType.QUARKUS);
         // Exported as Quarkus configuration: no Forage artifact
         assertThat(deps).noneMatch(d -> d.startsWith("mvn:io.kaoto.forage:"));
-        // Pooling is on by default
-        assertThat(deps).anyMatch(d -> d.contains("quarkus-pooled-jms"));
+        // As before the translation: quarkus-pooled-jms only for an explicit pool.enabled=true
+        assertThat(deps).noneMatch(d -> d.contains("quarkus-pooled-jms"));
+        assertThat(createQuarkusExportCustomizer(
+                                "forage.jms.kind=artemis\nforage.jms.broker.url=tcp://localhost:61616\n"
+                                        + "forage.jms.pool.enabled=true\n")
+                        .resolveRuntimeDependencies(RuntimeType.QUARKUS))
+                .anyMatch(d -> d.contains("quarkus-pooled-jms"));
         // Should include camel-quarkus-jms (additional dependency)
         assertThat(deps).anyMatch(d -> d.contains("camel-quarkus-jms"));
         // Should include quarkus-artemis-jms (bean runtime dependency)

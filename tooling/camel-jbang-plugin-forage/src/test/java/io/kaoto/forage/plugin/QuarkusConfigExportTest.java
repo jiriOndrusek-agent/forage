@@ -14,8 +14,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.TreeMap;
 import io.kaoto.forage.core.util.config.ConfigStore;
 import io.smallrye.config.PropertiesConfigSource;
+import io.smallrye.config.SmallRyeConfig;
 import io.smallrye.config.SmallRyeConfigBuilder;
 
 import org.junit.jupiter.api.AfterEach;
@@ -47,10 +49,9 @@ class QuarkusConfigExportTest {
         ConfigStore.getInstance().reload();
     }
 
-    /** Only the project values: not system properties, driver properties of the home directory, ... */
+    /** Only the project values: not system properties, ... */
     @Test
     void translatesPlainNamedDataSource(@TempDir Path home) throws IOException {
-        Files.writeString(home.resolve(MODULE), "forage.ds1.jdbc.properties.a=1\n");
         System.setProperty("forage.home.dir", home.toString());
         System.setProperty("forage.ds1.jdbc.username", "leaked");
         System.setProperty("forage.ds1.jdbc.properties.ssl", "true");
@@ -60,15 +61,34 @@ class QuarkusConfigExportTest {
         assertThat(result.modules()).containsExactly("jdbc");
         assertThat(result.forageKeys()).hasSize(5);
         assertThat(result.properties())
-                .containsEntry("quarkus.datasource.\"ds1\".db-kind", "postgresql")
-                .containsEntry("quarkus.datasource.\"ds1\".username", "test")
-                .containsEntry("quarkus.datasource.\"ds1\".jdbc.min-size", "4")
+                .containsEntry("quarkus.datasource.\"ds1\".db-kind", "${forage.ds1.jdbc.db.kind:postgresql}")
+                .containsEntry("quarkus.datasource.\"ds1\".username", "${forage.ds1.jdbc.username:test}")
+                .containsEntry("quarkus.datasource.\"ds1\".jdbc.min-size", "${forage.ds1.jdbc.pool.min.size:4}")
+                .containsEntry(
+                        "quarkus.datasource.\"ds1\".jdbc.acquisition-timeout",
+                        "${forage.ds1.jdbc.pool.acquisition.timeout.seconds:5}S")
+                .containsEntry(QuarkusConfigExport.LOCATIONS, MODULE + ",${forage.config.dir:none}/" + MODULE)
                 .noneSatisfy((key, value) -> assertThat(key).contains("additional-jdbc-properties"));
         assertThat(result.messages())
                 .singleElement()
                 .asString()
                 .contains("QUARKUS_DATASOURCE__DS1__JDBC_URL", "Ignored");
         assertThat(System.getProperty("forage.ds1.jdbc.properties.ssl")).isEqualTo("true");
+    }
+
+    /** The exported app would not read a module file of the Forage home directory: the module stays forage.*. */
+    @Test
+    void keepsModuleOfAHomeDirectoryFileOnForage(@TempDir Path home) throws IOException {
+        Files.writeString(home.resolve(MODULE), "forage.ds1.jdbc.properties.a=1\n");
+        System.setProperty("forage.home.dir", home.toString());
+
+        QuarkusConfigExport.Result result = translate(DS1);
+
+        assertThat(result.modules()).isEmpty();
+        assertThat(result.messages())
+                .singleElement()
+                .asString()
+                .contains("stays as forage.*", "read from the Forage home directory");
     }
 
     /** What needs the Forage runtime keeps the whole module on forage.* (";" = new line). */
@@ -86,7 +106,10 @@ class QuarkusConfigExportTest {
                 "@forage.jms.kind=artemis;forage.jms.broker.url=x;forage.jms.artemis.call.timeout=1 | not covered",
                 "@forage.mq1.jms.kind=artemis;forage.mq1.jms.broker.url=x | named configurations",
                 "@forage.jms.kind=ibmmq;forage.jms.broker.url=localhost(1414) | no Quarkus equivalent",
-                "@forage.jdbc.url=jdbc:postgresql://localhost/db | jdbc':"
+                "@forage.jdbc.url=jdbc:postgresql://localhost/db | jdbc':",
+                "forage.ds1.jdbc.url=x${x:dflt}y | overridable expression",
+                "@forage.jms.kind=artemis;forage.jms.broker.url=${x} | overridable expression",
+                "forage.ds1.jdbc.db.kind=oracle | oracle, which has no Quarkus dependency"
             })
     void keepsModuleOnForage(String lines, String reason) {
         // "@": without DS1
@@ -99,24 +122,26 @@ class QuarkusConfigExportTest {
     }
 
     /**
-     * Copied as they are: Quarkus reads an empty value as not set and expands ${, $$ and \\$, as it reads the Forage
-     * values of an export without translation.
+     * Quarkus reads the value as the Forage value of an export without translation: empty as not set, $$ and \\$
+     * expanded.
      */
     @ParameterizedTest
     @CsvSource(
             delimiter = '|',
             value = {
                 "forage.ds1.jdbc.properties.ssl= | quarkus.datasource.\"ds1\".jdbc.additional-jdbc-properties.\"ssl\" | ''",
-                "forage.ds1.jdbc.url=x${x:dflt}y | quarkus.datasource.\"ds1\".jdbc.url | x${x:dflt}y",
                 "forage.ds1.jdbc.url=a$$b | quarkus.datasource.\"ds1\".jdbc.url | a$$b",
+                "forage.ds1.jdbc.url=ab$ | quarkus.datasource.\"ds1\".jdbc.url | ab$",
+                "forage.ds1.jdbc.url=a:b\\\\c | quarkus.datasource.\"ds1\".jdbc.url | a:b\\c",
                 "forage.ds1.jdbc.url=a\\\\$b | quarkus.datasource.\"ds1\".jdbc.url | a\\$b",
-                "@forage.jms.kind=artemis;forage.jms.broker.url=${x};forage.jms.password= | quarkus.artemis.url | ${x}"
+                "@forage.jms.kind=artemis;forage.jms.broker.url=x;forage.jms.password= | quarkus.artemis.password | ''"
             })
     void translatesEmptyAndExpressionValues(String lines, String key, String value) {
         String application = lines.startsWith("@") ? lines.substring(1) : DS1 + lines;
         QuarkusConfigExport.Result result = translate(application.replace(";", "\n"));
 
-        assertThat(result.properties()).containsEntry(key, value);
+        assertThat(resolved(result.properties()).get(key))
+                .isEqualTo(resolved(Map.of(key, value)).get(key));
     }
 
     /** The JDBC translation leaves an empty password out: not set, as Quarkus reads the empty value. */
@@ -125,7 +150,9 @@ class QuarkusConfigExportTest {
         QuarkusConfigExport.Result result = translate(DS1.replace("password=secret", "password="));
 
         assertThat(result.modules()).containsExactly("jdbc");
-        assertThat(result.properties()).doesNotContainKey("quarkus.datasource.\"ds1\".password");
+        assertThat(result.properties())
+                .containsEntry("quarkus.datasource.\"ds1\".password", "${forage.ds1.jdbc.password:}");
+        assertThat(resolved(result.properties())).doesNotContainKey("quarkus.datasource.\"ds1\".password");
     }
 
     /** Values that would be translated do not change a module that stays forage.* (e.g. an XA datasource). */
@@ -195,7 +222,7 @@ class QuarkusConfigExportTest {
 
         QuarkusConfigExport.write(QuarkusConfigExport.translate(exported(dir)), dir);
 
-        Properties application = read(dir.resolve("application.properties"));
+        Map<String, String> application = resolved(read(dir.resolve("application.properties")));
         assertThat(application)
                 .containsEntry("camel.main.name", "demo")
                 .containsEntry("quarkus.datasource.\"ds1\".jdbc.max-size", "50")
@@ -206,11 +233,13 @@ class QuarkusConfigExportTest {
         assertThat(Files.readString(dir.resolve("application.properties")))
                 .startsWith("camel.main.name=demo\nquarkus.datasource.\"ds1\".jdbc.max-size=50\n"
                         + "quarkus.datasource.ds1.jdbc.min-size=7\n# comment \\\n")
-                .doesNotContain("\r", "forage.");
+                .doesNotContain("\r")
+                .doesNotContainPattern("(?m)^forage\\.");
         assertThat(Files.readString(dir.resolve(MODULE))).isEqualTo("# datasource\n");
         assertThat(Files.readString(dir.resolve("other.properties"))).contains("jdbc:h2:mem:other");
 
         Files.writeString(dir.resolve(MODULE), DS1);
+        Files.writeString(dir.resolve("application.properties"), "camel.main.name=demo\n");
         QuarkusConfigExport.write(QuarkusConfigExport.translate(exported(dir)), dir);
         assertThat(dir.resolve(MODULE)).doesNotExist();
     }
@@ -218,12 +247,12 @@ class QuarkusConfigExportTest {
     /** Quarkus reads every written value as translated: escapes, non-ASCII, a plain $; keys like {@code a\=b}. */
     @Test
     void writeRoundTripsSpecialCharacters() throws IOException {
-        String password = " lead\\back\nnew\ttab#!=:é😀 a$b$}c$ trail ";
+        String password = " lead\\back\nnew\ttab#!=:é😀 a$b$c$ trail ";
         Files.writeString(
                 dir.resolve("application.properties"),
                 DS1.replace(
                                 "password=secret",
-                                "password=\\ lead\\\\back\\nnew\\ttab#!=:\\u00e9\\ud83d\\ude00 a$b$}c$ trail ")
+                                "password=\\ lead\\\\back\\nnew\\ttab#!=:\\u00e9\\ud83d\\ude00 a$b$c$ trail ")
                         + "forage.ds1.jdbc.properties.a\\=b\\ c=\\ v\n");
 
         QuarkusConfigExport.Result result = QuarkusConfigExport.translate(exported(dir));
@@ -236,25 +265,33 @@ class QuarkusConfigExportTest {
                 .build();
         assertThat(quarkus.getConfigValue("quarkus.datasource.\"ds1\".password").getValue())
                 .isEqualTo(password);
-        assertThat(application)
+        assertThat(resolved(application))
                 .containsEntry("quarkus.datasource.\"ds1\".jdbc.additional-jdbc-properties.\"a=b c\"", " v");
         assertThat(application.stringPropertyNames()).noneMatch(key -> key.startsWith("forage."));
         assertThat(Files.readString(dir.resolve("application.properties"), StandardCharsets.US_ASCII))
                 .isEqualTo(Files.readString(dir.resolve("application.properties"), StandardCharsets.UTF_8));
     }
 
-    /** Empty and expression values are written as they are; Quarkus expands them as without translation. */
+    /** Empty values and an existing quarkus.config.locations; Quarkus reads them as without translation. */
     @Test
-    void writeKeepsEmptyAndExpressionValues() throws IOException {
+    void writeKeepsEmptyValuesAndLocations() throws IOException {
         Files.writeString(
                 dir.resolve("application.properties"),
-                DS1.replace("localhost", "${host:localhost}") + "forage.ds1.jdbc.properties.ssl=\n");
+                DS1 + "forage.ds1.jdbc.properties.ssl=\nquarkus.config.locations=my.properties\n");
 
         QuarkusConfigExport.write(QuarkusConfigExport.translate(exported(dir)), dir);
 
-        assertThat(read(dir.resolve("application.properties")))
-                .containsEntry("quarkus.datasource.\"ds1\".jdbc.url", "jdbc:postgresql://${host:localhost}:5432/db")
-                .containsEntry("quarkus.datasource.\"ds1\".jdbc.additional-jdbc-properties.\"ssl\"", "");
+        Properties application = read(dir.resolve("application.properties"));
+        assertThat(application)
+                .containsEntry(
+                        "quarkus.datasource.\"ds1\".jdbc.additional-jdbc-properties.\"ssl\"",
+                        "${forage.ds1.jdbc.properties.ssl:}")
+                .containsEntry(
+                        QuarkusConfigExport.LOCATIONS,
+                        "my.properties," + MODULE + ",${forage.config.dir:none}/" + MODULE);
+        assertThat(resolved(application))
+                .containsEntry("quarkus.datasource.\"ds1\".jdbc.url", "jdbc:postgresql://localhost:5432/db")
+                .doesNotContainKey("quarkus.datasource.\"ds1\".jdbc.additional-jdbc-properties.\"ssl\"");
     }
 
     /**
@@ -281,7 +318,7 @@ class QuarkusConfigExportTest {
         Files.write(dir.resolve(MODULE), concat(other.getBytes(StandardCharsets.ISO_8859_1), line));
         Files.writeString(dir.resolve("application.properties"), "camel.main.name=démo\n");
         QuarkusConfigExport.write(QuarkusConfigExport.translate(exported(dir)), dir);
-        assertThat(read(dir.resolve("application.properties")))
+        assertThat(resolved(read(dir.resolve("application.properties"))))
                 .containsEntry("quarkus.datasource.\"ds1\".password", value);
         assertThat(Files.readAllBytes(dir.resolve(MODULE))).isEqualTo("# démo\n".getBytes(StandardCharsets.ISO_8859_1));
         assertThat(Files.readString(dir.resolve("application.properties"))).startsWith("camel.main.name=démo\n");
@@ -290,7 +327,7 @@ class QuarkusConfigExportTest {
         Files.delete(dir.resolve(MODULE));
         Files.writeString(dir.resolve("application.properties"), DS1.replace("secret", value), StandardCharsets.UTF_8);
         QuarkusConfigExport.write(QuarkusConfigExport.translate(exported(dir)), dir);
-        assertThat(read(dir.resolve("application.properties")))
+        assertThat(resolved(read(dir.resolve("application.properties"))))
                 .containsEntry("quarkus.datasource.\"ds1\".password", value);
     }
 
@@ -310,6 +347,20 @@ class QuarkusConfigExportTest {
 
     private static QuarkusConfigExport.Project exported(Path dir) throws IOException {
         return QuarkusConfigExport.load(dir, QuarkusConfigExport.EXPORTED_APPLICATION);
+    }
+
+    /** The values Quarkus reads, expressions resolved without overrides; empty values are not set. */
+    static Map<String, String> resolved(Map<?, ?> properties) {
+        Properties source = new Properties();
+        source.putAll(properties);
+        SmallRyeConfig config = new SmallRyeConfigBuilder()
+                .addDefaultInterceptors()
+                .withSources(new PropertiesConfigSource(source, "app", 250))
+                .build();
+        Map<String, String> values = new TreeMap<>();
+        source.stringPropertyNames()
+                .forEach(key -> config.getOptionalValue(key, String.class).ifPresent(v -> values.put(key, v)));
+        return values;
     }
 
     /** As Quarkus reads application.properties: UTF-8. */

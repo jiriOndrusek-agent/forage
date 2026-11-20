@@ -40,7 +40,7 @@ export FORAGE_MYDB_JDBC_URL=jdbc:postgresql://prod-db:5432/orders
 camel run *
 ```
 
-On `camel export --runtime=quarkus`, configurations written as `quarkus.*` properties (plain JDBC, default Artemis JMS) no longer read `FORAGE_*`: use the `QUARKUS_*` names the export prints.
+On `camel export --runtime=quarkus`, configurations written as `quarkus.*` properties (plain JDBC, default Artemis JMS) still read `FORAGE_*` through `${forage.<key>:<value>}` expressions; see the [migration guide](../guides/migration.md) for the limits.
 
 ### Environment Variable Naming
 

@@ -126,7 +126,7 @@ Export your project to Spring Boot or Quarkus with the Forage dependencies it ne
     camel export --runtime=quarkus --directory=./my-app
     ```
 
-On Quarkus, plain JDBC datasources and the default Artemis connection factory are written at export time as `quarkus.*` properties to `application.properties`, and their Forage artifacts are left out. Override them with the `QUARKUS_*` names the export prints. Other modules and configurations keep `forage.*` and the Forage extension.
+On Quarkus, plain JDBC datasources and the default Artemis connection factory are written at export time as `quarkus.*` properties to `application.properties`, and their Forage artifacts are left out. `FORAGE_*` and the `QUARKUS_*` names the export prints still override them; set `FORAGE_QUARKUS_TRANSLATION_SKIP=true` to keep `forage.*`. Other modules and configurations keep `forage.*` and the Forage extension.
 
 ## Testing Connections
 

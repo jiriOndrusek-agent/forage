@@ -5,3 +5,5 @@ forage.jms.broker.url=tcp://localhost:61616  # Overridden by test with testconta
 forage.jms.username=artemis
 forage.jms.password=artemis
 forage.jms.pool.max.connections=5
+# explicit: only then does the Quarkus export add quarkus-pooled-jms
+forage.jms.pool.enabled=true

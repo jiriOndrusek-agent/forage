@@ -6,13 +6,15 @@ This guide covers both version-to-version upgrade notes and migrating from frame
 
 ## Upgrading to 1.6.3
 
-### Breaking Changes
+### Changes
 
 #### Quarkus export writes JDBC and JMS configuration as Quarkus properties
 
-`camel export --runtime=quarkus` now writes plain JDBC datasources and the default Artemis connection factory as `quarkus.*` properties, without the Forage artifacts. A module is translated only when every one of its `forage.*` keys has a Quarkus translation; otherwise it stays `forage.*` and the export names the blocking keys. For translated configurations, `FORAGE_*` / `-Dforage.*` values and Forage files outside the exported project are no longer read: use the `QUARKUS_*` names the export prints. JMS pooling off writes `quarkus.pooled-jms.pooling.enabled=false`.
+`camel export --runtime=quarkus` now writes plain JDBC datasources (kinds with a Quarkus driver in the catalog: PostgreSQL, MySQL, MariaDB, H2) and the default Artemis connection factory as `quarkus.*` properties, without the Forage artifacts. A module is translated only when every one of its `forage.*` keys has a Quarkus translation; otherwise it stays `forage.*` and the export names the reason. Each value is written as `${forage.<key>:<value>}` and `quarkus.config.locations` lists the module files, so `FORAGE_*`, `-Dforage.*` and `forage-*.properties` in the working directory, on the classpath or in `forage.config.dir` still override it. `quarkus-pooled-jms` is added only for `forage.jms.pool.enabled=true`, as before; pooling off writes `quarkus.pooled-jms.pooling.enabled=false`. To keep everything on `forage.*`, set `FORAGE_QUARKUS_TRANSLATION_SKIP=true` (or `-Dforage.quarkus.translation.skip=true`) for the export.
 
-Values are copied as they are: an empty value or one with `${`, `$$` or `\$` gives the same app as an export without translation (Quarkus reads it as not set, or expands it). A `%profile` key in `application.properties` or a `forage.*` key in a shipped `application-<profile>.properties` keeps the module on `forage.*`, with a note. Only the files the export ships are translated. The export fails instead of changing a value: a translated `forage.*` value in `application.properties` or `--property` that Camel JBang writes differently (backslash, leading space, line break: set it in the module's `forage-*.properties` file); an export that reuses earlier run data (use `--fresh`).
+The module stays `forage.*`, with a note, when: a value contains `{` or `}` (it cannot be written inside an expression); Camel JBang writes a value of `application.properties` or `--property` differently (backslash, leading space, line break); the export reuses earlier run data (export with `--fresh` to translate); its module file is in `~/.forage` or `FORAGE_CONFIG_DIR` at export time; a `%profile` key in `application.properties` or a `forage.*` key in a shipped `application-<profile>.properties` is set. Only the files the export ships are translated.
+
+Differences left for translated modules: a datasource name or `properties.*` key defined only by `FORAGE_*` / `-Dforage.*` at runtime is not picked up, nor a `~/.forage` file; when both `FORAGE_X` and `-Dforage.x` are set, `-Dforage.x` wins (Forage: the environment variable); Quarkus merges the module files per key, Forage read only the first file found. Use the off switch if you rely on these.
 
 Known limitations, as before: the exported `pom.xml` can list a Camel Quarkus extension twice when the route uses a component Forage also adds (e.g. `camel-quarkus-sql`), remove the duplicate; a `camel export` that does not list the module files does not ship `forage-*.properties`. Forage reads property files as ISO-8859-1: write non-ASCII characters as `\uXXXX` to get the same value everywhere.
 

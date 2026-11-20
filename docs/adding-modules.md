@@ -502,7 +502,8 @@ Without one the module stays `forage.*`. The keys come from `descriptor().transl
 groups. `covered()` must list every key `translateProperties` fully covers: any other key present keeps the whole
 module on `forage.*`, so the export never drops configuration. List in `dependencyKeys()` the translated keys the
 module's dependencies follow (JDBC: `db-kind`): a different `quarkus.*` value in `application.properties` keeps the
-configuration on `forage.*`. See `JdbcQuarkusConfigHook` and `JmsQuarkusConfigHook`.
+configuration on `forage.*`. Map each translated key to its Forage key in `sources()`: the export writes it as
+`${forage.<key>:<value>}`, so `FORAGE_*` still overrides it. See `JdbcQuarkusConfigHook` and `JmsQuarkusConfigHook`.
 
 ---
 

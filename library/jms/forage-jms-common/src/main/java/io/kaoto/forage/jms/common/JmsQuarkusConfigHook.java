@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.Set;
 import io.kaoto.forage.core.common.ForageModuleDescriptor;
 import io.kaoto.forage.core.common.QuarkusConfigHook;
+import io.kaoto.forage.core.util.config.ConfigStore;
 
 public final class JmsQuarkusConfigHook implements QuarkusConfigHook<ConnectionFactoryConfig> {
 
@@ -39,8 +40,29 @@ public final class JmsQuarkusConfigHook implements QuarkusConfigHook<ConnectionF
     }
 
     @Override
+    public Map<String, String> sources() {
+        return Map.of(
+                "quarkus.artemis.url", "{broker.url}",
+                "quarkus.artemis.username", "{username}",
+                "quarkus.artemis.password", "{password}",
+                "quarkus.pooled-jms.max-connections", "{pool.max.connections}",
+                "quarkus.pooled-jms.max-sessions-per-connection", "{pool.max.sessions.per.connection}",
+                "quarkus.pooled-jms.connection-idle-timeout", "{pool.idle.timeout.millis}",
+                "quarkus.pooled-jms.connection-check-interval", "{pool.expiry.timeout.millis}",
+                "quarkus.pooled-jms.block-if-session-pool-is-full", "{pool.block.if.full}",
+                "quarkus.pooled-jms.block-if-session-pool-is-full-timeout", "{pool.block.if.full.timeout.millis}");
+    }
+
+    @Override
     public Set<String> adjust(ConnectionFactoryConfig config, Map<String, String> translated) {
-        // pooling is on by default: quarkus-pooled-jms must be added
+        // as the Forage export: quarkus-pooled-jms only for an explicit pool.enabled=true (the store holds only the
+        // project values); without it the pool keys stay inert, as the Forage extension left them
+        String poolEnabled = ConfigStore.getInstance()
+                .get(ConnectionFactoryConfigEntries.POOL_ENABLED)
+                .orElse(null);
+        if (poolEnabled == null) {
+            return Set.of();
+        }
         if (config.poolEnabled()) {
             return Set.of(POOL_GROUP);
         }

@@ -31,6 +31,16 @@ public interface QuarkusConfigHook<C extends Config> {
         return Set.of();
     }
 
+    /**
+     * The Forage key each translated key is read from, so the export writes it as {@code ${forage.<key>:<value>}} and
+     * {@code FORAGE_*} / {@code -Dforage.*} still override it. Maps a translated key ({@code {name}}: the configuration
+     * name; ending with {@code .}: a map, its quoted key is appended) to {@code {<key after the module prefix>}<unit>}.
+     * Listed keys missing from the translation are written as {@code ${forage.<key>:}}; others keep their value.
+     */
+    default Map<String, String> sources() {
+        return Map.of();
+    }
+
     /** Adjusts the translated properties and returns the catalog groups they enable. */
     default Set<String> adjust(C config, Map<String, String> translated) {
         return Set.of();

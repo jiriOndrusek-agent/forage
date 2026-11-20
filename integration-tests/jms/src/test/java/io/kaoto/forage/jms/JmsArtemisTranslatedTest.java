@@ -55,7 +55,7 @@ public class JmsArtemisTranslatedTest implements ForageIntegrationTest {
     public void translatedConnectionFactory(ForageTestCaseRunner runner) {
         runner.then(
                 camel().cli().verify().integration(INTEGRATION_NAME).waitForLogMessage("Received: Translated message"));
-        // the pool keys need quarkus-pooled-jms, which the export adds as pooling is on by default
+        // the pool keys need quarkus-pooled-jms, which the export adds for pool.enabled=true
         runner.then(context -> {
             Long pid = context.getVariable(INTEGRATION_NAME + ":pid", Long.class);
             ProcessAndOutput process =

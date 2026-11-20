@@ -6,7 +6,9 @@ import java.io.StringWriter;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
@@ -100,7 +102,11 @@ public class ForagePlugin implements Plugin {
         // used once, also on failure: a later export in this JVM must not see it
         String exportProperties = runProperties == null ? System.clearProperty(RUN_PROPERTIES_KEY) : null;
         QuarkusConfigExport.Result quarkusExport = null;
-        if (runtime == RuntimeType.QUARKUS && runProperties != null) {
+        if (runtime == RuntimeType.QUARKUS
+                && booleanOverride("forage.quarkus.translation.skip", "FORAGE_QUARKUS_TRANSLATION_SKIP")) {
+            // switched off: every module stays forage.*, as before the Quarkus translation
+            quarkusExport = new QuarkusConfigExport.Result();
+        } else if (runtime == RuntimeType.QUARKUS && runProperties != null) {
             quarkusExport = translateProject(runProperties).result();
             System.setProperty(RUN_PROPERTIES_KEY, encode(runProperties));
         } else if (runtime == RuntimeType.QUARKUS) {
@@ -152,10 +158,11 @@ public class ForagePlugin implements Plugin {
                 QuarkusConfigExport.Run exported = QuarkusConfigExport.run(resources, new Properties());
                 if (!exported.result().modules().isEmpty()
                         || !exported.application().isEmpty()) {
-                    throw new IllegalStateException("The export reuses the data of an earlier run, which may not "
-                            + "match the exported Forage configuration. Export again with --fresh.");
+                    new Printer.SystemOutPrinter()
+                            .println("The export reuses the data of an earlier run: the Forage configuration stays"
+                                    + " forage.* (export with --fresh to translate it to Quarkus properties).");
                 }
-                return exported.result();
+                return new QuarkusConfigExport.Result();
             }
             Properties decoded = new Properties();
             decoded.load(new StringReader(runProperties));
@@ -163,11 +170,34 @@ public class ForagePlugin implements Plugin {
                 return translateProject(decoded).result();
             }
             // the files the export ships, not every file of the project directory
-            QuarkusConfigExport.Run run = QuarkusConfigExport.run(
-                    CatalogDrivenExportCustomizer.workingDir().toPath(), decoded, resources);
-            QuarkusConfigExport.checkExported(run, resources);
-            QuarkusConfigExport.write(run.result(), resources);
+            Path dir = CatalogDrivenExportCustomizer.workingDir().toPath();
+            QuarkusConfigExport.Run run = QuarkusConfigExport.run(dir, decoded, resources);
+            Map<String, String> changed = QuarkusConfigExport.checkExported(run, resources);
+            if (!changed.isEmpty()) {
+                // those modules stay forage.*, as the export without translation
+                run = QuarkusConfigExport.run(dir, decoded, resources, changed);
+            }
             Printer printer = new Printer.SystemOutPrinter();
+            Map<Path, byte[]> original = new HashMap<>();
+            for (String file : run.result().files()) {
+                original.put(resources.resolve(file), Files.readAllBytes(resources.resolve(file)));
+            }
+            Path application = resources.resolve("application.properties");
+            original.put(application, Files.exists(application) ? Files.readAllBytes(application) : null);
+            try {
+                QuarkusConfigExport.write(run.result(), resources);
+            } catch (IllegalStateException e) {
+                // the files did not end up as intended: restore them, everything stays forage.*
+                for (Map.Entry<Path, byte[]> file : original.entrySet()) {
+                    if (file.getValue() == null) {
+                        Files.deleteIfExists(file.getKey());
+                    } else {
+                        Files.write(file.getKey(), file.getValue());
+                    }
+                }
+                printer.println(e.getMessage() + ": the Forage configuration stays forage.*.");
+                return new QuarkusConfigExport.Result();
+            }
             run.result().messages().forEach(printer::println);
             return run.result();
         } catch (IOException e) {
