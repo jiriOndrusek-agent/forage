@@ -162,6 +162,7 @@ Config entries define the properties a user can set. Each entry carries enough m
 | `multiValue` | `true` when the value can list several entries, comma-separated -- for a `bean-name` entry, several beans (e.g., `forage.route.policy.{routeId}.name=schedule,flip`). Present only when `true`: any other selector takes exactly one bean name |
 | `quarkusProperty` | The native Quarkus key `camel export --runtime=quarkus` writes for this entry (`{name}`: quoted configuration name; ending with `.`: a map). From the module descriptor's `quarkusProperties()`. Present only for entries with a plain Quarkus equivalent |
 | `quarkusUnit` | Unit appended to the Quarkus value (`S`, `M`). Present only when there is one |
+| `quarkusIgnored` | `true`: the entry has no effect on Quarkus, so `camel export --runtime=quarkus` leaves it untranslated (with a note). From the module descriptor's `quarkusIgnoredProperties()`. Present only when `true` |
 
 **Supported types:**
 

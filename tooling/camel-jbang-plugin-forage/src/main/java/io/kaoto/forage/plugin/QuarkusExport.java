@@ -36,10 +36,15 @@ final class QuarkusExport {
 
     static final String LOCATIONS = "quarkus.config.locations";
 
-    /** A Quarkus key ({@code {name}}: the quoted configuration name; ending with {@code .}: a map), and a unit. */
-    private record To(String key, String unit) {}
+    /**
+     * A Quarkus key ({@code {name}}: the quoted configuration name; ending with {@code .}: a map), and a unit; or none,
+     * {@code ignored}: the Forage key has no effect on Quarkus.
+     */
+    private record To(String key, String unit, boolean ignored) {}
 
-    private static final To NONE = new To(null, "");
+    private static final To NONE = new To(null, "", false);
+
+    private static final To IGNORED = new To(null, "", true);
 
     /** Forage keys the code below handles, without a Quarkus key of their own. */
     private static final Map<String, Set<String>> HANDLED = Map.of(
@@ -62,7 +67,9 @@ final class QuarkusExport {
                     String key = entry.getName().substring(("forage." + module + ".").length());
                     keys.put(
                             to.endsWith(".") ? key + "." : key,
-                            new To(to, entry.getQuarkusUnit() == null ? "" : entry.getQuarkusUnit()));
+                            new To(to, entry.getQuarkusUnit() == null ? "" : entry.getQuarkusUnit(), false));
+                } else if (entry.isQuarkusIgnored()) {
+                    keys.put(entry.getName().substring(("forage." + module + ".").length()), IGNORED);
                 }
             }
             if (!keys.isEmpty()) {
@@ -128,10 +135,17 @@ final class QuarkusExport {
                 reason = "default and named configurations together";
             }
             Map<String, String> translated = new TreeMap<>();
+            List<String> ignored = new ArrayList<>();
             for (var config : configs.entrySet()) {
                 if (reason == null) {
                     reason = translate(
-                            catalog, module, table.get(module), config.getKey(), config.getValue(), translated);
+                            catalog,
+                            module,
+                            table.get(module),
+                            config.getKey(),
+                            config.getValue(),
+                            translated,
+                            ignored);
                 }
             }
             if (reason == null) {
@@ -147,6 +161,11 @@ final class QuarkusExport {
             result.notes()
                     .add("Forage " + module + " exported as quarkus.* configuration; FORAGE_* and -Dforage.* still"
                             + " override it.");
+            if (!ignored.isEmpty()) {
+                result.notes()
+                        .add("Forage " + module + ": " + String.join(", ", ignored)
+                                + " not translated, no effect on Quarkus.");
+            }
         }
         if (!locations.isEmpty()) {
             // module files of the working directory, the classpath and FORAGE_CONFIG_DIR are still read
@@ -177,19 +196,26 @@ final class QuarkusExport {
         return null;
     }
 
-    /** Adds the Quarkus properties of one configuration, or returns why the module stays forage.*. */
+    /**
+     * Adds the Quarkus properties of one configuration and its keys without effect on Quarkus to {@code ignored}, or
+     * returns why the module stays forage.*.
+     */
     private static String translate(
             ForageCatalogReader catalog,
             String module,
             Map<String, To> table,
             String name,
             Map<String, String> values,
-            Map<String, String> translated) {
+            Map<String, String> translated,
+            List<String> ignored) {
         String prefix = "forage." + (name.isEmpty() ? "" : name + ".") + module + ".";
         for (var entry : values.entrySet()) {
             String suffix = entry.getKey().substring(prefix.length());
             if (!table.containsKey(suffix) && !(table.containsKey("properties.") && suffix.startsWith("properties."))) {
                 return entry.getKey() + " has no Quarkus equivalent";
+            }
+            if (table.containsKey(suffix) && table.get(suffix).ignored()) {
+                ignored.add(entry.getKey());
             }
             // Quarkus cannot escape { or } inside ${...:<value>}; Forage expands ${...} and {{...}} itself
             if ((entry.getKey() + entry.getValue()).matches("(?s).*[{}].*")

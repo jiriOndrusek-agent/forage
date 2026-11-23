@@ -62,6 +62,11 @@ public class ConfigEntry {
     @JsonProperty("quarkusUnit")
     private String quarkusUnit;
 
+    /** The entry has no effect on Quarkus: the export leaves it untranslated. Only written when {@code true}. */
+    @JsonProperty("quarkusIgnored")
+    @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+    private boolean quarkusIgnored;
+
     public ConfigEntry() {}
 
     public ConfigEntry(String name, String type, String description, boolean required) {
@@ -173,5 +178,13 @@ public class ConfigEntry {
 
     public void setQuarkusUnit(String quarkusUnit) {
         this.quarkusUnit = quarkusUnit;
+    }
+
+    public boolean isQuarkusIgnored() {
+        return quarkusIgnored;
+    }
+
+    public void setQuarkusIgnored(boolean quarkusIgnored) {
+        this.quarkusIgnored = quarkusIgnored;
     }
 }

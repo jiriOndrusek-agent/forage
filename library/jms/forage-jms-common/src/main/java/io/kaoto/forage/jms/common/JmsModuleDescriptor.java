@@ -121,6 +121,15 @@ public class JmsModuleDescriptor implements ForageModuleDescriptor<ConnectionFac
         return QUARKUS_PROPERTIES;
     }
 
+    /**
+     * Forage keys (after {@code forage.jms.}) with no effect on Quarkus: {@link #translateProperties} writes nothing
+     * for them and no runtime applies them, so the export may leave them untranslated. Read by the catalog build.
+     * {@code pool.connection.timeout.millis}: {@link PooledConnectionFactory} only logs it.
+     */
+    public List<String> quarkusIgnoredProperties() {
+        return List.of("pool.connection.timeout.millis");
+    }
+
     @Override
     public Map<String, String> translateProperties(String prefix, ConnectionFactoryConfig config) {
         Map<String, String> props = new HashMap<>();

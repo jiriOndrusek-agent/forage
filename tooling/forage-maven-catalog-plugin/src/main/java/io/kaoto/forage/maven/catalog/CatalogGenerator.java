@@ -79,7 +79,8 @@ public class CatalogGenerator {
 
     /**
      * Sets {@code quarkusProperty} / {@code quarkusUnit} on the config entries listed by a module descriptor's
-     * {@code quarkusProperties()} (forageKey, quarkusKey, unit). The descriptors are loaded from the project classpath
+     * {@code quarkusProperties()} (forageKey, quarkusKey, unit), and {@code quarkusIgnored} on those listed by
+     * {@code quarkusIgnoredProperties()} (Forage keys). The descriptors are loaded from the project classpath
      * in an isolated class loader and read by reflection: the plugin does not depend on the modules.
      */
     private void addQuarkusProperties(MavenProject project, List<ForageComponent> components) throws IOException {
@@ -109,18 +110,26 @@ public class CatalogGenerator {
                                         ? forageKey.substring(0, forageKey.length() - 1)
                                         : forageKey);
                         String unit = (String) call(property, "unit");
-                        List<ConfigEntry> entries = components.stream()
-                                .filter(c -> c.getConfigurationProperties() != null)
-                                .flatMap(c -> c.getConfigurationProperties().stream())
-                                .filter(e -> name.equals(e.getName()))
-                                .toList();
-                        if (entries.isEmpty()) {
-                            throw new IllegalStateException(
-                                    descriptorClass + ".quarkusProperties() lists " + name + ", not a config entry");
-                        }
-                        for (ConfigEntry entry : entries) {
+                        for (ConfigEntry entry : entries(components, descriptorClass + ".quarkusProperties()", name)) {
                             entry.setQuarkusProperty((String) call(property, "quarkusKey"));
                             entry.setQuarkusUnit(unit.isEmpty() ? null : unit);
+                        }
+                    }
+                    Method ignored;
+                    try {
+                        ignored = type.getMethod("quarkusIgnoredProperties");
+                    } catch (NoSuchMethodException e) {
+                        continue;
+                    }
+                    for (Object forageKey : (List<?>) ignored.invoke(descriptor)) {
+                        String name = "forage." + module + "." + forageKey;
+                        for (ConfigEntry entry :
+                                entries(components, descriptorClass + ".quarkusIgnoredProperties()", name)) {
+                            if (entry.getQuarkusProperty() != null) {
+                                throw new IllegalStateException(descriptorClass + " lists " + name
+                                        + " in both quarkusProperties() and quarkusIgnoredProperties()");
+                            }
+                            entry.setQuarkusIgnored(true);
                         }
                     }
                 }
@@ -128,6 +137,19 @@ public class CatalogGenerator {
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("Cannot read the Quarkus properties of the module descriptors", e);
         }
+    }
+
+    /** The config entries named {@code name}; fails when there is none. */
+    private static List<ConfigEntry> entries(List<ForageComponent> components, String source, String name) {
+        List<ConfigEntry> entries = components.stream()
+                .filter(c -> c.getConfigurationProperties() != null)
+                .flatMap(c -> c.getConfigurationProperties().stream())
+                .filter(e -> name.equals(e.getName()))
+                .toList();
+        if (entries.isEmpty()) {
+            throw new IllegalStateException(source + " lists " + name + ", not a config entry");
+        }
+        return entries;
     }
 
     private static Object call(Object target, String method) throws ReflectiveOperationException {
