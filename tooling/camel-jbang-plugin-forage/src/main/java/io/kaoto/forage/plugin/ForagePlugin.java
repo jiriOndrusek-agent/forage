@@ -5,9 +5,11 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
 import org.apache.camel.dsl.jbang.core.common.CamelJBangPlugin;
+import org.apache.camel.dsl.jbang.core.common.CommandLineHelper;
 import org.apache.camel.dsl.jbang.core.common.Plugin;
 import org.apache.camel.dsl.jbang.core.common.PluginExporter;
 import org.apache.camel.dsl.jbang.core.common.PluginRunCustomizer;
@@ -27,6 +29,12 @@ import picocli.CommandLine;
 public class ForagePlugin implements Plugin {
 
     private static final Logger LOG = LoggerFactory.getLogger(ForagePlugin.class);
+
+    /** Set by a run, taken by its own getDependencies call. */
+    private static final AtomicBoolean RUN_STARTED = new AtomicBoolean();
+
+    /** Set in this JVM by a run: an export without it reuses earlier run data. */
+    static final String FRESH_RUN = "forage.quarkus.translation.fresh";
 
     @Override
     public void customize(CommandLine commandLine, CamelJBangMain main) {
@@ -55,13 +63,9 @@ public class ForagePlugin implements Plugin {
         return Optional.of(new PluginExporter() {
             @Override
             public Set<String> getDependencies(org.apache.camel.dsl.jbang.core.common.RuntimeType runtimeType) {
-                // gather dependencies across all (enabled) export customizers for the specific runtime
-                return ExportHelper.getAllCustomizers()
-                        .filter(ExportCustomizer::isEnabled)
-                        .map(exportCustomizer ->
-                                exportCustomizer.resolveRuntimeDependencies(RuntimeType.fromValue(runtimeType.name())))
-                        .flatMap(Set::stream)
-                        .collect(Collectors.toSet());
+                return dependencies(
+                        RuntimeType.fromValue(runtimeType.name()),
+                        CommandLineHelper.getWorkDir().resolve("work/src/main/resources"));
             }
 
             @Override
@@ -76,7 +80,53 @@ public class ForagePlugin implements Plugin {
         });
     }
 
+    static Set<String> dependencies(RuntimeType runtime, Path exportedResources) {
+        // a run (also the silent run of an export) keeps the Forage runtime
+        boolean run = RUN_STARTED.getAndSet(false);
+        Set<String> quarkusModules =
+                !run && runtime == RuntimeType.QUARKUS ? exportQuarkusConfig(exportedResources) : Set.of();
+        // gather dependencies across all (enabled) export customizers for the specific runtime
+        return ExportHelper.getAllCustomizers(quarkusModules)
+                .filter(ExportCustomizer::isEnabled)
+                .map(exportCustomizer -> exportCustomizer.resolveRuntimeDependencies(runtime))
+                .flatMap(Set::stream)
+                .collect(Collectors.toSet());
+    }
+
+    /** Called when a Camel JBang run starts. */
+    static void runStarted() {
+        RUN_STARTED.set(true);
+        System.setProperty(FRESH_RUN, "true");
+    }
+
+    /**
+     * Writes the Forage JDBC / default Artemis JMS configuration as quarkus.* keys into the exported resources, and
+     * returns the translated modules. Camel JBang calls getDependencies after it wrote them.
+     */
+    private static Set<String> exportQuarkusConfig(Path resources) {
+        if (booleanOverride("forage.quarkus.translation.skip", "FORAGE_QUARKUS_TRANSLATION_SKIP")) {
+            return Set.of();
+        }
+        Printer printer = new Printer.SystemOutPrinter();
+        if (System.getProperty(FRESH_RUN) == null) {
+            printer.println(
+                    "Forage configuration stays as forage.* configuration: the export reuses earlier run data.");
+            return Set.of();
+        }
+        try {
+            QuarkusExport.Result result = QuarkusExport.export(resources);
+            result.notes().forEach(printer::println);
+            return result.modules();
+        } catch (Exception e) {
+            // never fail where the export without translation works; the message holds no values
+            printer.println("Forage configuration stays as forage.* configuration: "
+                    + e.getClass().getSimpleName());
+            return Set.of();
+        }
+    }
+
     private void beforeRun(KameletMain main, List<String> files) {
+        runStarted();
         resolveConfigDir(files);
         propagateProfile(main);
         addCatalogDrivenRepos(main);
