@@ -3,7 +3,9 @@ package io.kaoto.forage.catalog;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import io.kaoto.forage.jdbc.common.JdbcModuleDescriptor;
 import io.kaoto.forage.jms.common.JmsModuleDescriptor;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -33,6 +35,31 @@ class QuarkusPropertiesCatalogTest {
 
         assertThat(mapped("forage-catalog.json")).isEqualTo(expected);
         assertThat(mapped("forage-configuration-catalog.json")).isEqualTo(expected);
+    }
+
+    /** {@code quarkusIgnored} is exactly the descriptors' {@code quarkusIgnoredProperties()}, without a Quarkus key. */
+    @Test
+    void catalogHasTheIgnoredLists() throws Exception {
+        Set<String> expected = new TreeSet<>();
+        new JmsModuleDescriptor().quarkusIgnoredProperties().forEach(key -> expected.add("forage.jms." + key));
+        assertThat(expected).contains("forage.jms.pool.connection.timeout.millis");
+
+        assertThat(ignored("forage-catalog.json")).isEqualTo(expected);
+        assertThat(ignored("forage-configuration-catalog.json")).isEqualTo(expected);
+    }
+
+    /** Every config entry with quarkusIgnored=true (and no quarkusProperty). */
+    private static Set<String> ignored(String file) throws Exception {
+        Set<String> ignored = new TreeSet<>();
+        new ObjectMapper()
+                .readTree(Files.readString(DIR.resolve(file)))
+                .findParents("quarkusIgnored")
+                .forEach(node -> {
+                    assertThat(node.get("quarkusIgnored").asBoolean()).isTrue();
+                    assertThat(node.has("quarkusProperty")).isFalse();
+                    ignored.add(node.get("name").asText());
+                });
+        return ignored;
     }
 
     /** Every config entry with a quarkusProperty: name -> quarkusProperty|quarkusUnit. */

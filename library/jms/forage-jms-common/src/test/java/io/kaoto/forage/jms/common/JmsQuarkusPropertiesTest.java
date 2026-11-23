@@ -60,6 +60,26 @@ class JmsQuarkusPropertiesTest {
                 .allSatisfy(p -> assertThat(names).contains("forage.jms." + p.forageKey()));
     }
 
+    /** An ignored key is a config entry, not mapped, and does not change the translated map. */
+    @Test
+    void ignoredKeysDoNotChangeTheMap() {
+        JmsModuleDescriptor descriptor = new JmsModuleDescriptor();
+        List<String> names = modules().stream().map(ConfigModule::name).toList();
+        for (String key : descriptor.quarkusIgnoredProperties()) {
+            assertThat(names).contains("forage.jms." + key);
+            assertThat(descriptor.quarkusProperties())
+                    .noneMatch(p -> p.forageKey().equals(key));
+            set("forage.jms.kind", "artemis");
+            set("forage.jms.broker.url", "tcp://h:61616");
+            Map<String, String> without = descriptor.translateProperties(null, new ConnectionFactoryConfig());
+            set("forage.jms." + key, "12345");
+            ConfigStore.getInstance().reload();
+            assertThat(descriptor.translateProperties(null, new ConnectionFactoryConfig()))
+                    .isEqualTo(without);
+            tearDown();
+        }
+    }
+
     private Map<String, String> assertSame(String name) {
         ConnectionFactoryConfig config =
                 name == null ? new ConnectionFactoryConfig() : new ConnectionFactoryConfig(name);

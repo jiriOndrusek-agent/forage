@@ -284,6 +284,33 @@ class QuarkusExportTest {
                 .isEqualTo("tcp://localhost:61616");
     }
 
+    /**
+     * The pool keys of docs/jms (pool.connection.timeout.millis, no effect on any runtime): translated, the timeout
+     * left untranslated with a note, no Forage artifact.
+     */
+    @Test
+    void translatesAConnectionFactoryWithAnIgnoredKey() throws IOException {
+        Files.writeString(
+                project.resolve(JMS_FILE),
+                ARTEMIS + "forage.jms.pool.enabled=true\nforage.jms.pool.max.connections=5\n"
+                        + "forage.jms.pool.connection.timeout.millis=30000\n");
+        Files.copy(project.resolve(JMS_FILE), resources.resolve(JMS_FILE));
+
+        QuarkusExport.Result result = QuarkusExport.translate(resources, new Properties());
+
+        assertThat(result.modules()).containsExactly("jms");
+        assertThat(result.properties())
+                .containsEntry("quarkus.pooled-jms.max-connections", "${forage.jms.pool.max.connections:5}")
+                .noneSatisfy((key, value) -> assertThat(value).contains("connection.timeout"));
+        assertThat(result.notes())
+                .anySatisfy(note -> assertThat(note).contains("jms exported as quarkus.*"))
+                .anySatisfy(note -> assertThat(note)
+                        .contains("forage.jms.pool.connection.timeout.millis not translated, no effect on Quarkus"));
+        assertThat(ForagePlugin.dependencies(RuntimeType.QUARKUS, resources))
+                .noneMatch(d -> d.contains("io.kaoto.forage"))
+                .anyMatch(d -> d.contains("quarkus-pooled-jms"));
+    }
+
     /** The empty H2 password of the JDBC test plan: translated, Quarkus reads it as not set. */
     @Test
     void translatesAnEmptyPassword() throws IOException {
