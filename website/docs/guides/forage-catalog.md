@@ -160,6 +160,8 @@ Config entries define the properties a user can set. Each entry carries enough m
 | `selectsFrom` | For `bean-name` type -- the feature name whose beans populate the dropdown |
 | `hidden` | `true` for internal entries (infrastructure overrides) that a UI should not render; omitted otherwise |
 | `multiValue` | `true` when the value can list several entries, comma-separated -- for a `bean-name` entry, several beans (e.g., `forage.route.policy.{routeId}.name=schedule,flip`). Present only when `true`: any other selector takes exactly one bean name |
+| `quarkusProperty` | The native Quarkus key `camel export --runtime=quarkus` writes for this entry (`{name}`: quoted configuration name; ending with `.`: a map). From the module descriptor's `quarkusProperties()`. Present only for entries with a plain Quarkus equivalent |
+| `quarkusUnit` | Unit appended to the Quarkus value (`S`, `M`). Present only when there is one |
 
 **Supported types:**
 

@@ -5,6 +5,7 @@ import jakarta.jms.ConnectionFactory;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import org.apache.camel.tooling.model.Strings;
 import io.kaoto.forage.core.common.ForageModuleDescriptor;
@@ -69,6 +70,57 @@ public class JmsModuleDescriptor implements ForageModuleDescriptor<ConnectionFac
         return createConfig(prefix).poolEnabled() ? "stop" : "";
     }
 
+    /**
+     * A Forage key (after {@code forage.jms.}) written as a Quarkus key with the value of {@code value} and a unit
+     * (always empty here), for the default Artemis connection factory.
+     */
+    public record QuarkusProperty(
+            String forageKey, String quarkusKey, String unit, Function<ConnectionFactoryConfig, Object> value) {}
+
+    private static final List<QuarkusProperty> QUARKUS_PROPERTIES = List.of(
+            new QuarkusProperty("password", "quarkus.artemis.password", "", ConnectionFactoryConfig::password),
+            new QuarkusProperty("username", "quarkus.artemis.username", "", ConnectionFactoryConfig::username),
+            new QuarkusProperty("broker.url", "quarkus.artemis.url", "", ConnectionFactoryConfig::brokerUrl),
+            new QuarkusProperty(
+                    "pool.max.connections",
+                    "quarkus.pooled-jms.max-connections",
+                    "",
+                    ConnectionFactoryConfig::maxConnections),
+            new QuarkusProperty(
+                    "pool.max.sessions.per.connection",
+                    "quarkus.pooled-jms.max-sessions-per-connection",
+                    "",
+                    ConnectionFactoryConfig::maxSessionsPerConnection),
+            // pooled-jms expects both timeouts in milliseconds - pass the configured millis through unchanged
+            new QuarkusProperty(
+                    "pool.idle.timeout.millis",
+                    "quarkus.pooled-jms.connection-idle-timeout",
+                    "",
+                    ConnectionFactoryConfig::idleTimeoutMillis),
+            new QuarkusProperty(
+                    "pool.expiry.timeout.millis",
+                    "quarkus.pooled-jms.connection-check-interval",
+                    "",
+                    ConnectionFactoryConfig::expiryTimeoutMillis),
+            new QuarkusProperty(
+                    "pool.block.if.full",
+                    "quarkus.pooled-jms.block-if-session-pool-is-full",
+                    "",
+                    ConnectionFactoryConfig::blockIfFull),
+            new QuarkusProperty(
+                    "pool.block.if.full.timeout.millis",
+                    "quarkus.pooled-jms.block-if-session-pool-is-full-timeout",
+                    "",
+                    ConnectionFactoryConfig::blockIfFullTimeoutMillis));
+
+    /**
+     * The Forage keys {@link #translateProperties} writes as one Quarkus key each for an Artemis connection factory
+     * (the transaction keys are not listed). Read by the catalog build.
+     */
+    public List<QuarkusProperty> quarkusProperties() {
+        return QUARKUS_PROPERTIES;
+    }
+
     @Override
     public Map<String, String> translateProperties(String prefix, ConnectionFactoryConfig config) {
         Map<String, String> props = new HashMap<>();
@@ -85,20 +137,10 @@ public class JmsModuleDescriptor implements ForageModuleDescriptor<ConnectionFac
             } else {
                 addIfNotEmpty(props, "quarkus.artemis.enabled", "true");
             }
-            addIfNotEmpty(props, property + "password", config.password());
-            addIfNotEmpty(props, property + "username", config.username());
-            addIfNotEmpty(props, property + "url", config.brokerUrl());
-
-            addIfNotEmpty(props, "quarkus.pooled-jms.max-connections", config::maxConnections);
-            addIfNotEmpty(props, "quarkus.pooled-jms.max-sessions-per-connection", config::maxSessionsPerConnection);
-            // pooled-jms expects both timeouts in milliseconds - pass the configured millis through unchanged
-            addIfNotEmpty(props, "quarkus.pooled-jms.connection-idle-timeout", config::idleTimeoutMillis);
-            addIfNotEmpty(props, "quarkus.pooled-jms.connection-check-interval", config::expiryTimeoutMillis);
-            addIfNotEmpty(props, "quarkus.pooled-jms.block-if-session-pool-is-full", config::blockIfFull);
-            addIfNotEmpty(
-                    props,
-                    "quarkus.pooled-jms.block-if-session-pool-is-full-timeout",
-                    config::blockIfFullTimeoutMillis);
+            for (QuarkusProperty quarkus : QUARKUS_PROPERTIES) {
+                String key = quarkus.quarkusKey().replace("quarkus.artemis.", property);
+                addIfNotEmpty(props, key, () -> quarkus.value().apply(config));
+            }
 
             if (config.transactionEnabled()) {
                 addIfNotEmpty(props, "quarkus.pooled-jms.transaction", "xa");

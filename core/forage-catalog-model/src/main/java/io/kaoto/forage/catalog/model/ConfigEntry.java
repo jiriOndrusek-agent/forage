@@ -51,6 +51,17 @@ public class ConfigEntry {
     @JsonInclude(JsonInclude.Include.NON_DEFAULT)
     private boolean multiValue;
 
+    /**
+     * The Quarkus key the export writes for this entry ({@code {name}}: the quoted configuration name; ending with
+     * {@code .}: a map). Only written for entries with a plain Quarkus equivalent.
+     */
+    @JsonProperty("quarkusProperty")
+    private String quarkusProperty;
+
+    /** The unit appended to the Quarkus value ({@code S} or {@code M}). Only written when there is one. */
+    @JsonProperty("quarkusUnit")
+    private String quarkusUnit;
+
     public ConfigEntry() {}
 
     public ConfigEntry(String name, String type, String description, boolean required) {
@@ -146,5 +157,21 @@ public class ConfigEntry {
 
     public void setMultiValue(boolean multiValue) {
         this.multiValue = multiValue;
+    }
+
+    public String getQuarkusProperty() {
+        return quarkusProperty;
+    }
+
+    public void setQuarkusProperty(String quarkusProperty) {
+        this.quarkusProperty = quarkusProperty;
+    }
+
+    public String getQuarkusUnit() {
+        return quarkusUnit;
+    }
+
+    public void setQuarkusUnit(String quarkusUnit) {
+        this.quarkusUnit = quarkusUnit;
     }
 }
