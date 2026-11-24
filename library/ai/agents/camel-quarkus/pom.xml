@@ -26,6 +26,7 @@
     <modules>
         <module>runtime</module>
         <module>deployment</module>
+        <module>langchain4j-deployment</module>
     </modules>
 
 </project>

@@ -3,6 +3,7 @@ package io.kaoto.forage.quarkus.agent.deployment;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.camel.component.langchain4j.agent.api.Agent;
@@ -70,6 +71,7 @@ public class ForageAgentProcessor {
             CamelContextBuildItem context,
             ForageAgentRecorder recorder,
             List<ForageAgentBuildItem> agents,
+            Optional<ForageAgentQuarkusChatModelBuildItem> quarkusChatModel,
             BuildProducer<CamelRuntimeBeanBuildItem> beans) {
 
         for (ForageAgentBuildItem agentItem : agents) {
@@ -78,7 +80,8 @@ public class ForageAgentProcessor {
                     "Recording Agent bean '%s' with model kind: %s",
                     name, agentItem.getConfig().modelKind());
 
-            RuntimeValue<Agent> agent = recorder.createAgent(name, context.getCamelContext());
+            RuntimeValue<Agent> agent =
+                    recorder.createAgent(name, context.getCamelContext(), quarkusChatModel.isPresent());
             beans.produce(new CamelRuntimeBeanBuildItem(name, Agent.class.getName(), agent));
         }
     }
