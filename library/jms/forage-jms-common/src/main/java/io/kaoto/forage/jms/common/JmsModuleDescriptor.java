@@ -130,6 +130,28 @@ public class JmsModuleDescriptor implements ForageModuleDescriptor<ConnectionFac
         return List.of("pool.connection.timeout.millis");
     }
 
+    /**
+     * Forage keys (after {@code forage.jms.}) with no Quarkus key of their own that the export handles:
+     * {@code pool.enabled=true} adds {@code quarkus-pooled-jms} (catalog condition). Read by the catalog build.
+     */
+    public List<String> quarkusHandledProperties() {
+        return List.of("pool.enabled");
+    }
+
+    /**
+     * The Forage key (after {@code forage.jms.}) selecting the bean, the kinds the export translates with the Quarkus
+     * keys each adds, and whether only the default configuration is translated.
+     */
+    public record QuarkusSelector(String forageKey, Map<String, Map<String, String>> kinds, boolean defaultOnly) {}
+
+    private static final QuarkusSelector QUARKUS_SELECTOR =
+            new QuarkusSelector("kind", Map.of("artemis", Map.of("quarkus.artemis.enabled", "true")), true);
+
+    /** The selector of the Quarkus export: only the default Artemis connection factory. Read by the catalog build. */
+    public QuarkusSelector quarkusSelector() {
+        return QUARKUS_SELECTOR;
+    }
+
     @Override
     public Map<String, String> translateProperties(String prefix, ConnectionFactoryConfig config) {
         Map<String, String> props = new HashMap<>();
@@ -144,7 +166,7 @@ public class JmsModuleDescriptor implements ForageModuleDescriptor<ConnectionFac
                 addIfNotEmpty(props, "quarkus.artemis.enabled", "false");
                 addIfNotEmpty(props, "quarkus.artemis.devservices.enabled", "false");
             } else {
-                addIfNotEmpty(props, "quarkus.artemis.enabled", "true");
+                props.putAll(QUARKUS_SELECTOR.kinds().get("artemis"));
             }
             for (QuarkusProperty quarkus : QUARKUS_PROPERTIES) {
                 String key = quarkus.quarkusKey().replace("quarkus.artemis.", property);

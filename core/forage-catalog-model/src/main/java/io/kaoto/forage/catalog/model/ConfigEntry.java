@@ -67,6 +67,18 @@ public class ConfigEntry {
     @JsonInclude(JsonInclude.Include.NON_DEFAULT)
     private boolean quarkusIgnored;
 
+    /**
+     * The entry has no Quarkus key of its own but the export handles it (e.g. a catalog condition). Only written when
+     * {@code true}.
+     */
+    @JsonProperty("quarkusHandled")
+    @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+    private boolean quarkusHandled;
+
+    /** The entry selects the bean (the kind) of a module the export translates. Only written on that entry. */
+    @JsonProperty("quarkusSelector")
+    private QuarkusSelector quarkusSelector;
+
     public ConfigEntry() {}
 
     public ConfigEntry(String name, String type, String description, boolean required) {
@@ -186,5 +198,21 @@ public class ConfigEntry {
 
     public void setQuarkusIgnored(boolean quarkusIgnored) {
         this.quarkusIgnored = quarkusIgnored;
+    }
+
+    public boolean isQuarkusHandled() {
+        return quarkusHandled;
+    }
+
+    public void setQuarkusHandled(boolean quarkusHandled) {
+        this.quarkusHandled = quarkusHandled;
+    }
+
+    public QuarkusSelector getQuarkusSelector() {
+        return quarkusSelector;
+    }
+
+    public void setQuarkusSelector(QuarkusSelector quarkusSelector) {
+        this.quarkusSelector = quarkusSelector;
     }
 }

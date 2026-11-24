@@ -125,13 +125,13 @@ class QuarkusExportTest {
                 "%prod.forage.ds1.jdbc.url=jdbc:postgresql://prod/db | profile-specific",
                 "forage.jdbc.url=jdbc:postgresql://localhost/db | default and named",
                 "forage.ds1.jdbc.pool.idle.validation.timeout.minutes=9 | has no Quarkus",
-                "forage.ds1.jdbc.db.kind=oracle | no Quarkus driver",
+                "forage.ds1.jdbc.db.kind=oracle | the kind of forage.ds1.jdbc.* has no Quarkus equivalent",
                 "@forage.jdbc.url=jdbc:postgresql://localhost/db | forage.jdbc.db.kind is not set",
                 "@forage.jms.kind=artemis;forage.jms.broker.url=x;forage.jms.artemis.call.timeout=1 | has no Quarkus",
                 "@forage.jms.kind=artemis;forage.jms.broker.url=x;forage.jms.ssl.enabled=true | has no Quarkus",
                 "@forage.jms.kind=artemis;forage.jms.broker.url=x;forage.jms.transaction.enabled=true | has no Quarkus",
-                "@forage.mq1.jms.kind=artemis;forage.mq1.jms.broker.url=x | only the default Artemis",
-                "@forage.jms.kind=ibmmq;forage.jms.broker.url=localhost(1414) | only the default Artemis",
+                "@forage.mq1.jms.kind=artemis;forage.mq1.jms.broker.url=x | named configurations have no Quarkus",
+                "@forage.jms.kind=ibmmq;forage.jms.broker.url=localhost(1414) | the kind of forage.jms.* has no Quarkus",
                 "@forage.jms.kind=artemis;forage.jms.broker.url=${x} | cannot be written as a Quarkus expression"
             })
     void keepsModuleOnForage(String lines, String reason) throws IOException {

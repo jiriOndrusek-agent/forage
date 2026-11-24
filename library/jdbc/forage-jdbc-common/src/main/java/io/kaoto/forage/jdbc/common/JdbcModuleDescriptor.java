@@ -114,6 +114,18 @@ public class JdbcModuleDescriptor implements ForageModuleDescriptor<DataSourceFa
         return QUARKUS_PROPERTIES;
     }
 
+    /**
+     * The Forage key (after {@code forage.[<name>.]jdbc.}) selecting the bean, the kinds the export translates with the
+     * Quarkus keys each adds ({@code null}: any kind with a Quarkus driver in the catalog), and whether only the default
+     * configuration is translated.
+     */
+    public record QuarkusSelector(String forageKey, Map<String, Map<String, String>> kinds, boolean defaultOnly) {}
+
+    /** The selector of the Quarkus export. Read by the catalog build. */
+    public QuarkusSelector quarkusSelector() {
+        return new QuarkusSelector("db.kind", null, false);
+    }
+
     @Override
     public Map<String, String> translateProperties(String prefix, DataSourceFactoryConfig config) {
         Map<String, String> props = new HashMap<>();
