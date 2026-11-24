@@ -2,6 +2,7 @@ package io.kaoto.forage.catalog;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -21,6 +22,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class QuarkusPropertiesCatalogTest {
 
     private static final Path DIR = Path.of("target", "generated-catalog");
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Test
     void catalogHasTheDescriptorLists() throws Exception {
@@ -46,6 +49,58 @@ class QuarkusPropertiesCatalogTest {
 
         assertThat(ignored("forage-catalog.json")).isEqualTo(expected);
         assertThat(ignored("forage-configuration-catalog.json")).isEqualTo(expected);
+    }
+
+    /** {@code quarkusHandled} is exactly the descriptors' {@code quarkusHandledProperties()}. */
+    @Test
+    void catalogHasTheHandledLists() throws Exception {
+        Set<String> expected = new TreeSet<>();
+        new JmsModuleDescriptor().quarkusHandledProperties().forEach(key -> expected.add("forage.jms." + key));
+        assertThat(expected).contains("forage.jms.pool.enabled");
+
+        for (String file : List.of("forage-catalog.json", "forage-configuration-catalog.json")) {
+            Set<String> handled = new TreeSet<>();
+            read(file)
+                    .findParents("quarkusHandled")
+                    .forEach(node -> handled.add(node.get("name").asText()));
+            assertThat(handled).isEqualTo(expected);
+        }
+    }
+
+    /** {@code quarkusSelector} is exactly the descriptors' {@code quarkusSelector()}. */
+    @Test
+    void catalogHasTheSelectors() throws Exception {
+        var jdbc = new JdbcModuleDescriptor().quarkusSelector();
+        var jms = new JmsModuleDescriptor().quarkusSelector();
+        Map<String, Object> expected = new TreeMap<>();
+        expected.put("forage.jdbc." + jdbc.forageKey(), selector(jdbc.kinds(), jdbc.defaultOnly()));
+        expected.put("forage.jms." + jms.forageKey(), selector(jms.kinds(), jms.defaultOnly()));
+        assertThat(expected).containsKeys("forage.jdbc.db.kind", "forage.jms.kind");
+
+        for (String file : List.of("forage-catalog.json", "forage-configuration-catalog.json")) {
+            Map<String, Object> selectors = new TreeMap<>();
+            read(file).findParents("quarkusSelector").forEach(node -> {
+                Object previous = selectors.put(
+                        node.get("name").asText(), MAPPER.convertValue(node.get("quarkusSelector"), Map.class));
+                assertThat(previous).isIn(null, selectors.get(node.get("name").asText()));
+            });
+            assertThat(selectors).isEqualTo(expected);
+        }
+    }
+
+    private static Map<String, Object> selector(Map<String, Map<String, String>> kinds, boolean defaultOnly) {
+        Map<String, Object> selector = new TreeMap<>();
+        if (kinds != null) {
+            selector.put("kinds", kinds);
+        }
+        if (defaultOnly) {
+            selector.put("defaultOnly", true);
+        }
+        return selector;
+    }
+
+    private static JsonNode read(String file) throws Exception {
+        return MAPPER.readTree(Files.readString(DIR.resolve(file)));
     }
 
     /** Every config entry with quarkusIgnored=true (and no quarkusProperty). */

@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.logging.Log;
@@ -27,6 +28,7 @@ import io.kaoto.forage.catalog.model.ForageBean;
 import io.kaoto.forage.catalog.model.ForageCatalog;
 import io.kaoto.forage.catalog.model.ForageConfigurationCatalog;
 import io.kaoto.forage.catalog.model.ForageFactory;
+import io.kaoto.forage.catalog.model.QuarkusSelector;
 import io.kaoto.forage.core.annotations.FactoryType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -80,8 +82,10 @@ public class CatalogGenerator {
     /**
      * Sets {@code quarkusProperty} / {@code quarkusUnit} on the config entries listed by a module descriptor's
      * {@code quarkusProperties()} (forageKey, quarkusKey, unit), and {@code quarkusIgnored} on those listed by
-     * {@code quarkusIgnoredProperties()} (Forage keys). The descriptors are loaded from the project classpath
-     * in an isolated class loader and read by reflection: the plugin does not depend on the modules.
+     * {@code quarkusIgnoredProperties()}, {@code quarkusHandled} on those listed by {@code quarkusHandledProperties()}
+     * (Forage keys), and {@code quarkusSelector} on the entry named by {@code quarkusSelector()}. The descriptors are
+     * loaded from the project classpath in an isolated class loader and read by reflection: the plugin does not depend
+     * on the modules.
      */
     private void addQuarkusProperties(MavenProject project, List<ForageComponent> components) throws IOException {
         List<URL> urls = new ArrayList<>();
@@ -115,13 +119,7 @@ public class CatalogGenerator {
                             entry.setQuarkusUnit(unit.isEmpty() ? null : unit);
                         }
                     }
-                    Method ignored;
-                    try {
-                        ignored = type.getMethod("quarkusIgnoredProperties");
-                    } catch (NoSuchMethodException e) {
-                        continue;
-                    }
-                    for (Object forageKey : (List<?>) ignored.invoke(descriptor)) {
+                    for (Object forageKey : list(descriptor, "quarkusIgnoredProperties")) {
                         String name = "forage." + module + "." + forageKey;
                         for (ConfigEntry entry :
                                 entries(components, descriptorClass + ".quarkusIgnoredProperties()", name)) {
@@ -130,6 +128,28 @@ public class CatalogGenerator {
                                         + " in both quarkusProperties() and quarkusIgnoredProperties()");
                             }
                             entry.setQuarkusIgnored(true);
+                        }
+                    }
+                    for (Object forageKey : list(descriptor, "quarkusHandledProperties")) {
+                        String name = "forage." + module + "." + forageKey;
+                        entries(components, descriptorClass + ".quarkusHandledProperties()", name)
+                                .forEach(entry -> entry.setQuarkusHandled(true));
+                    }
+                    Object selector = optional(descriptor, "quarkusSelector");
+                    if (selector != null) {
+                        String name = "forage." + module + "." + call(selector, "forageKey");
+                        Map<String, Map<String, String>> kinds = null;
+                        if (call(selector, "kinds") instanceof Map<?, ?> map) {
+                            kinds = new TreeMap<>(); // sorted: a stable catalog
+                            for (var kind : map.entrySet()) {
+                                Map<String, String> keys = new TreeMap<>();
+                                ((Map<?, ?>) kind.getValue()).forEach((k, v) -> keys.put((String) k, (String) v));
+                                kinds.put((String) kind.getKey(), keys);
+                            }
+                        }
+                        boolean defaultOnly = (Boolean) call(selector, "defaultOnly");
+                        for (ConfigEntry entry : entries(components, descriptorClass + ".quarkusSelector()", name)) {
+                            entry.setQuarkusSelector(new QuarkusSelector(kinds, defaultOnly));
                         }
                     }
                 }
@@ -154,6 +174,20 @@ public class CatalogGenerator {
 
     private static Object call(Object target, String method) throws ReflectiveOperationException {
         return target.getClass().getMethod(method).invoke(target);
+    }
+
+    /** The result of {@code method}, or {@code null} when the descriptor has no such method. */
+    private static Object optional(Object target, String method) throws ReflectiveOperationException {
+        try {
+            return call(target, method);
+        } catch (NoSuchMethodException e) {
+            return null;
+        }
+    }
+
+    private static List<?> list(Object target, String method) throws ReflectiveOperationException {
+        Object list = optional(target, method);
+        return list == null ? List.of() : (List<?>) list;
     }
 
     /**

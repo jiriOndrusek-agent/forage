@@ -20,17 +20,18 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import io.kaoto.forage.catalog.model.ConfigEntry;
+import io.kaoto.forage.catalog.model.QuarkusSelector;
 import io.kaoto.forage.catalog.reader.ForageCatalogReader;
 import io.kaoto.forage.core.util.config.ConfigHelper;
 import io.kaoto.forage.core.util.config.PropertyFileLocator;
 import io.kaoto.forage.core.util.config.PropertyFileSource;
 
 /**
- * Adds, on {@code camel export --runtime=quarkus}, native {@code quarkus.*} keys for the Forage JDBC datasources and
- * the default Artemis JMS connection factory to the exported {@code application.properties}, so the exported app needs
- * no Forage runtime for them. The {@code forage.*} keys stay; each Quarkus key reads its Forage key as
- * {@code ${forage.<key>:<value>}}, so {@code FORAGE_*} and {@code -Dforage.*} still win. A module with anything the
- * catalog does not map stays {@code forage.*} as before.
+ * Adds, on {@code camel export --runtime=quarkus}, native {@code quarkus.*} keys for the Forage modules the catalog maps
+ * (today the JDBC datasources and the default Artemis JMS connection factory) to the exported
+ * {@code application.properties}, so the exported app needs no Forage runtime for them. The {@code forage.*} keys
+ * stay; each Quarkus key reads its Forage key as {@code ${forage.<key>:<value>}}, so {@code FORAGE_*} and
+ * {@code -Dforage.*} still win. A module with anything the catalog does not map stays {@code forage.*} as before.
  */
 final class QuarkusExport {
 
@@ -38,23 +39,16 @@ final class QuarkusExport {
 
     /**
      * A Quarkus key ({@code {name}}: the quoted configuration name; ending with {@code .}: a map), and a unit; or none,
-     * {@code ignored}: the Forage key has no effect on Quarkus.
+     * {@code ignored}: the Forage key has no effect on Quarkus; {@code selector}: the key selects the bean.
      */
-    private record To(String key, String unit, boolean ignored) {}
+    private record To(String key, String unit, boolean ignored, QuarkusSelector selector) {}
 
-    private static final To NONE = new To(null, "", false);
-
-    private static final To IGNORED = new To(null, "", true);
-
-    /** Forage keys the code below handles, without a Quarkus key of their own. */
-    private static final Map<String, Set<String>> HANDLED = Map.of(
-            // only pool.enabled=true adds quarkus-pooled-jms (catalog condition), as before
-            "jms", Set.of("kind", "pool.enabled"));
+    private static final To IGNORED = new To(null, "", true, null);
 
     /**
      * Per module: the Forage keys (after {@code forage.[<name>.]<module>.}; ending with {@code .}: a map) with a
-     * Quarkus equivalent, from the catalog ({@code quarkusProperty} / {@code quarkusUnit}, written from the module
-     * descriptor's {@code quarkusProperties()} list).
+     * Quarkus equivalent, from the catalog ({@code quarkusProperty} / {@code quarkusUnit}, {@code quarkusIgnored},
+     * {@code quarkusHandled}, {@code quarkusSelector}, written from the module descriptor).
      */
     static Map<String, Map<String, To>> table(ForageCatalogReader catalog) {
         Map<String, Map<String, To>> table = new TreeMap<>();
@@ -63,17 +57,19 @@ final class QuarkusExport {
             Map<String, To> keys = new TreeMap<>();
             for (ConfigEntry entry : factory.configEntries()) {
                 String to = entry.getQuarkusProperty();
+                String key = entry.getName().substring(("forage." + module + ".").length());
+                QuarkusSelector selector = entry.getQuarkusSelector();
                 if (to != null) {
-                    String key = entry.getName().substring(("forage." + module + ".").length());
                     keys.put(
                             to.endsWith(".") ? key + "." : key,
-                            new To(to, entry.getQuarkusUnit() == null ? "" : entry.getQuarkusUnit(), false));
+                            new To(to, entry.getQuarkusUnit() == null ? "" : entry.getQuarkusUnit(), false, selector));
                 } else if (entry.isQuarkusIgnored()) {
-                    keys.put(entry.getName().substring(("forage." + module + ".").length()), IGNORED);
+                    keys.put(key, IGNORED);
+                } else if (selector != null || entry.isQuarkusHandled()) {
+                    keys.put(key, new To(null, "", false, selector));
                 }
             }
-            if (!keys.isEmpty()) {
-                HANDLED.getOrDefault(module, Set.of()).forEach(key -> keys.put(key, NONE));
+            if (keys.values().stream().anyMatch(to -> to.key() != null)) {
                 table.put(module, keys);
             }
         }
@@ -233,16 +229,22 @@ final class QuarkusExport {
                 return key + " is not set";
             }
         }
-        String kind = values.get(prefix + (module.equals("jdbc") ? "db.kind" : "kind"));
-        if (module.equals("jdbc")
-                && catalog.getBeanRuntimeDependencies(kind, "quarkus").isEmpty()) {
-            return "the JDBC kind of " + prefix + "* has no Quarkus driver in the Forage catalog";
-        }
-        if (module.equals("jms") && (!name.isEmpty() || !kind.equals("artemis"))) {
-            return "only the default Artemis connection factory has a Quarkus equivalent";
-        }
-        if (module.equals("jms")) {
-            translated.put("quarkus.artemis.enabled", "true");
+        for (var entry : table.entrySet()) {
+            QuarkusSelector selector = entry.getValue().selector();
+            if (selector == null) {
+                continue;
+            }
+            if (selector.isDefaultOnly() && !name.isEmpty()) {
+                return "named configurations have no Quarkus equivalent";
+            }
+            String kind = values.get(prefix + entry.getKey());
+            if (catalog.getBeanRuntimeDependencies(kind, "quarkus").isEmpty()
+                    || (selector.getKinds() != null && !selector.getKinds().containsKey(kind))) {
+                return "the kind of " + prefix + "* has no Quarkus equivalent in the Forage catalog";
+            }
+            if (selector.getKinds() != null) {
+                translated.putAll(selector.getKinds().get(kind));
+            }
         }
         String quarkusName = "\"" + (name.isEmpty() ? metadata.defaultBeanName() : name) + "\"";
         for (var entry : table.entrySet()) {
