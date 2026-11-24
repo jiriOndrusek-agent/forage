@@ -25,12 +25,19 @@ public final class ExportHelper {
     }
 
     public static Stream<ExportCustomizer> getAllCustomizers() {
-        return getAllCustomizers(Set.of());
+        return getAllCustomizers(Set.of(), Set.of(), Set.of());
     }
 
-    /** @param quarkusModules the modules exported as quarkus.* configuration */
-    public static Stream<ExportCustomizer> getAllCustomizers(Set<String> quarkusModules) {
-        return Stream.of(new CatalogDrivenExportCustomizer().quarkusModules(quarkusModules));
+    /**
+     * @param quarkusModules the modules exported as quarkus.* configuration
+     * @param removed bean artifacts replaced by Quarkus artifacts (catalog GAVs)
+     * @param added the replacing Quarkus artifacts (catalog GAVs)
+     */
+    public static Stream<ExportCustomizer> getAllCustomizers(
+            Set<String> quarkusModules, Set<String> removed, Set<String> added) {
+        return Stream.of(new CatalogDrivenExportCustomizer()
+                .quarkusModules(quarkusModules)
+                .quarkusDependencies(removed, added));
     }
 
     /**

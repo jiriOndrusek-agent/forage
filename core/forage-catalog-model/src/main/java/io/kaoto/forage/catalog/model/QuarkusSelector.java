@@ -1,5 +1,6 @@
 package io.kaoto.forage.catalog.model;
 
+import java.util.List;
 import java.util.Map;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -19,6 +20,17 @@ public class QuarkusSelector {
     @JsonProperty("defaultOnly")
     @JsonInclude(JsonInclude.Include.NON_DEFAULT)
     private boolean defaultOnly;
+
+    /** Per kind: the Quarkus key of each Forage key (after {@code forage.[<name>.]<module>.}). */
+    @JsonProperty("properties")
+    private Map<String, Map<String, String>> properties;
+
+    /**
+     * Per kind: the Quarkus artifacts replacing the selected bean's artifact. With these the module keeps its Forage
+     * runtime, so its keys without a Quarkus key stay {@code forage.*}.
+     */
+    @JsonProperty("dependencies")
+    private Map<String, List<String>> dependencies;
 
     public QuarkusSelector() {}
 
@@ -41,5 +53,21 @@ public class QuarkusSelector {
 
     public void setDefaultOnly(boolean defaultOnly) {
         this.defaultOnly = defaultOnly;
+    }
+
+    public Map<String, Map<String, String>> getProperties() {
+        return properties;
+    }
+
+    public void setProperties(Map<String, Map<String, String>> properties) {
+        this.properties = properties;
+    }
+
+    public Map<String, List<String>> getDependencies() {
+        return dependencies;
+    }
+
+    public void setDependencies(Map<String, List<String>> dependencies) {
+        this.dependencies = dependencies;
     }
 }

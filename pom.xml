@@ -65,6 +65,18 @@
         <quarkus.version>3.40.1.1</quarkus.version>
         <quarkus-artemis-jms.version>3.14.3</quarkus-artemis-jms.version>
         <quarkus-pooled-jms.version>2.13.0</quarkus-pooled-jms.version>
+        <!-- The version in the Quarkus platform ${quarkus.version}; the catalog writes it for the agent Quarkus export -->
+        <quarkus-langchain4j.version>1.13.3</quarkus-langchain4j.version>
+        <quarkus-langchain4j-ollama.version>${quarkus-langchain4j.version}</quarkus-langchain4j-ollama.version>
+        <quarkus-langchain4j-openai.version>${quarkus-langchain4j.version}</quarkus-langchain4j-openai.version>
+        <quarkus-langchain4j-anthropic.version>${quarkus-langchain4j.version}</quarkus-langchain4j-anthropic.version>
+        <quarkus-langchain4j-ai-gemini.version>${quarkus-langchain4j.version}</quarkus-langchain4j-ai-gemini.version>
+        <quarkus-langchain4j-azure-openai.version>${quarkus-langchain4j.version}</quarkus-langchain4j-azure-openai.version>
+        <quarkus-langchain4j-mistral-ai.version>${quarkus-langchain4j.version}</quarkus-langchain4j-mistral-ai.version>
+        <quarkus-langchain4j-hugging-face.version>${quarkus-langchain4j.version}</quarkus-langchain4j-hugging-face.version>
+        <quarkus-langchain4j-watsonx.version>${quarkus-langchain4j.version}</quarkus-langchain4j-watsonx.version>
+        <quarkus-langchain4j-bedrock.version>${quarkus-langchain4j.version}</quarkus-langchain4j-bedrock.version>
+        <forage-quarkus-agent-langchain4j-deployment.version>${project.version}</forage-quarkus-agent-langchain4j-deployment.version>
         <slf4j.version>2.0.18</slf4j.version>
         <smallrye.version>3.18.1</smallrye.version>
         <spotless.version>3.10.0</spotless.version>

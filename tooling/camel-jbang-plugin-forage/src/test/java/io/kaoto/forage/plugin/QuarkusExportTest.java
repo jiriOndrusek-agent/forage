@@ -43,6 +43,7 @@ class QuarkusExportTest {
 
     private static final String JDBC_FILE = "forage-datasource-factory.properties";
     private static final String JMS_FILE = "forage-connectionfactory.properties";
+    private static final String AGENT_FILE = "forage-agent-factory.properties";
     private static final String SKIP = "forage.quarkus.translation.skip";
     private static final String DS1 =
             """
@@ -452,6 +453,90 @@ class QuarkusExportTest {
                 .isEqualTo(overridden);
     }
 
+    /**
+     * The default agent: the chat model keys of its kind become quarkus-langchain4j keys, the extension replaces the
+     * Forage model artifact, the Forage agent stays and reads the other keys.
+     */
+    @Test
+    void translatesTheChatModelOfTheDefaultAgent() throws IOException {
+        Files.writeString(
+                resources.resolve("application.properties"),
+                """
+                forage.agent.model.kind=ollama
+                forage.agent.base.url=http://localhost:11434
+                forage.agent.model.name=granite4:3b
+                forage.agent.features=memory
+                forage.agent.memory.kind=message-window
+                """);
+
+        QuarkusExport.Result result = QuarkusExport.export(resources);
+
+        assertThat(result.modules()).isEmpty();
+        assertThat(result.properties())
+                .containsOnly(
+                        Map.entry(
+                                "quarkus.langchain4j.ollama.base-url",
+                                "${forage.agent.base.url:http://localhost:11434}"),
+                        Map.entry(
+                                "quarkus.langchain4j.ollama.chat-model.model-id",
+                                "${forage.agent.model.name:granite4:3b}"),
+                        Map.entry(QuarkusExport.LOCATIONS, AGENT_FILE + ",${forage.config.dir:none}/" + AGENT_FILE));
+        assertThat(result.removedDependencies())
+                .singleElement()
+                .asString()
+                .startsWith("io.kaoto.forage:forage-model-ollama:");
+        assertThat(result.addedDependencies())
+                .anyMatch(d -> d.startsWith("mvn:io.quarkiverse.langchain4j:quarkus-langchain4j-ollama:"))
+                .anyMatch(d -> d.startsWith("mvn:io.kaoto.forage:forage-quarkus-agent-langchain4j-deployment:"))
+                .hasSize(2);
+        assertThat(result.notes())
+                .anyMatch(n -> n.contains("agent exported as quarkus.*"))
+                .anyMatch(n -> n.contains("forage.agent.features, forage.agent.memory.kind stay forage.*"));
+
+        // as Quarkus reads it, and FORAGE_* still wins
+        assertThat(quarkus(resources, Map.of(), Map.of()).getValue("quarkus.langchain4j.ollama.base-url", String.class))
+                .isEqualTo("http://localhost:11434");
+        assertThat(quarkus(resources, Map.of("FORAGE_AGENT_MODEL_NAME", "llama3"), Map.of())
+                        .getValue("quarkus.langchain4j.ollama.chat-model.model-id", String.class))
+                .isEqualTo("llama3");
+    }
+
+    /** The export replaces only the chat model artifact of the agent; everything else is as without translation. */
+    @Test
+    void replacesTheForageModelArtifactOfTheAgent() throws IOException {
+        Files.writeString(project.resolve(AGENT_FILE), "forage.agent.model.kind=openai\nforage.agent.api.key=k\n");
+        Files.writeString(project.resolve("application.properties"), "");
+        System.setProperty(SKIP, "true");
+        camelExport();
+        Set<String> withoutTranslation = ForagePlugin.dependencies(RuntimeType.QUARKUS, resources);
+        System.clearProperty(SKIP);
+
+        Set<String> withTranslation = ForagePlugin.dependencies(RuntimeType.QUARKUS, resources);
+
+        Set<String> expected = new TreeSet<>(withoutTranslation);
+        expected.removeIf(d -> d.startsWith("mvn:io.kaoto.forage:forage-model-open-ai:"));
+        assertThat(withoutTranslation).hasSize(expected.size() + 1);
+        assertThat(withTranslation)
+                .containsAll(expected)
+                .anyMatch(d -> d.startsWith("mvn:io.quarkiverse.langchain4j:quarkus-langchain4j-openai:"))
+                .anyMatch(d -> d.startsWith("mvn:io.kaoto.forage:forage-quarkus-agent-langchain4j-deployment:"))
+                .hasSize(expected.size() + 2);
+    }
+
+    /** What has no quarkus-langchain4j equivalent keeps the whole agent on forage.*, with its model artifact. */
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "forage.a1.agent.model.kind=ollama | named configurations have no Quarkus equivalent",
+                "forage.agent.model.kind=dashscope | the kind of forage.agent.* has no Quarkus equivalent",
+                "forage.agent.features=memory | forage.agent.model.kind is not set",
+                "forage.agent.model.kind=openai;forage.agent.api.key={{env:KEY}} | cannot be written as a Quarkus"
+            })
+    void keepsAgentOnForage(String lines, String reason) throws IOException {
+        assertStaysForage(lines.replace(";", "\n") + "\n", reason);
+    }
+
     private void assertStaysForage(String application, String reason) throws IOException {
         if (application != null) {
             Files.writeString(resources.resolve("application.properties"), application);
@@ -474,7 +559,7 @@ class QuarkusExportTest {
     private static SmallRyeConfig quarkus(Path exported, Map<String, String> env, Map<String, String> sys)
             throws IOException {
         Properties modules = new Properties();
-        for (String file : List.of(JDBC_FILE, JMS_FILE)) {
+        for (String file : List.of(JDBC_FILE, JMS_FILE, AGENT_FILE)) {
             if (Files.exists(exported.resolve(file))) {
                 modules.putAll(read(exported.resolve(file)));
             }
