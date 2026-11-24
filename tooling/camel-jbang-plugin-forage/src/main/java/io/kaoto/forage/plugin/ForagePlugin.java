@@ -83,10 +83,13 @@ public class ForagePlugin implements Plugin {
     static Set<String> dependencies(RuntimeType runtime, Path exportedResources) {
         // a run (also the silent run of an export) keeps the Forage runtime
         boolean run = RUN_STARTED.getAndSet(false);
-        Set<String> quarkusModules =
-                !run && runtime == RuntimeType.QUARKUS ? exportQuarkusConfig(exportedResources) : Set.of();
+        QuarkusExport.Result quarkus =
+                !run && runtime == RuntimeType.QUARKUS ? exportQuarkusConfig(exportedResources) : null;
         // gather dependencies across all (enabled) export customizers for the specific runtime
-        return ExportHelper.getAllCustomizers(quarkusModules)
+        return (quarkus == null
+                        ? ExportHelper.getAllCustomizers()
+                        : ExportHelper.getAllCustomizers(
+                                quarkus.modules(), quarkus.removedDependencies(), quarkus.addedDependencies()))
                 .filter(ExportCustomizer::isEnabled)
                 .map(exportCustomizer -> exportCustomizer.resolveRuntimeDependencies(runtime))
                 .flatMap(Set::stream)
@@ -100,28 +103,28 @@ public class ForagePlugin implements Plugin {
     }
 
     /**
-     * Writes the Forage JDBC / default Artemis JMS configuration as quarkus.* keys into the exported resources, and
-     * returns the translated modules. Camel JBang calls getDependencies after it wrote them.
+     * Writes the Forage configuration the catalog maps as quarkus.* keys into the exported resources, and returns the
+     * result, or {@code null} when nothing is translated. Camel JBang calls getDependencies after it wrote them.
      */
-    private static Set<String> exportQuarkusConfig(Path resources) {
+    private static QuarkusExport.Result exportQuarkusConfig(Path resources) {
         if (booleanOverride("forage.quarkus.translation.skip", "FORAGE_QUARKUS_TRANSLATION_SKIP")) {
-            return Set.of();
+            return null;
         }
         Printer printer = new Printer.SystemOutPrinter();
         if (System.getProperty(FRESH_RUN) == null) {
             printer.println(
                     "Forage configuration stays as forage.* configuration: the export reuses earlier run data.");
-            return Set.of();
+            return null;
         }
         try {
             QuarkusExport.Result result = QuarkusExport.export(resources);
             result.notes().forEach(printer::println);
-            return result.modules();
+            return result;
         } catch (Exception e) {
             // never fail where the export without translation works; the message holds no values
             printer.println("Forage configuration stays as forage.* configuration: "
                     + e.getClass().getSimpleName());
-            return Set.of();
+            return null;
         }
     }
 

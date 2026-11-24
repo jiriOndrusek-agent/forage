@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import io.kaoto.forage.agent.AgentModuleDescriptor;
 import io.kaoto.forage.jdbc.common.JdbcModuleDescriptor;
 import io.kaoto.forage.jms.common.JmsModuleDescriptor;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -72,16 +73,34 @@ class QuarkusPropertiesCatalogTest {
     void catalogHasTheSelectors() throws Exception {
         var jdbc = new JdbcModuleDescriptor().quarkusSelector();
         var jms = new JmsModuleDescriptor().quarkusSelector();
+        var agent = new AgentModuleDescriptor().quarkusSelector();
         Map<String, Object> expected = new TreeMap<>();
         expected.put("forage.jdbc." + jdbc.forageKey(), selector(jdbc.kinds(), jdbc.defaultOnly()));
         expected.put("forage.jms." + jms.forageKey(), selector(jms.kinds(), jms.defaultOnly()));
-        assertThat(expected).containsKeys("forage.jdbc.db.kind", "forage.jms.kind");
+        Map<String, Object> agentSelector = selector(agent.kinds(), agent.defaultOnly());
+        agentSelector.put("properties", agent.properties());
+        agentSelector.put("dependencies", agent.dependencies());
+        expected.put("forage.agent." + agent.forageKey(), agentSelector);
+        assertThat(expected).containsKeys("forage.jdbc.db.kind", "forage.jms.kind", "forage.agent.model.kind");
 
         for (String file : List.of("forage-catalog.json", "forage-configuration-catalog.json")) {
             Map<String, Object> selectors = new TreeMap<>();
             read(file).findParents("quarkusSelector").forEach(node -> {
-                Object previous = selectors.put(
-                        node.get("name").asText(), MAPPER.convertValue(node.get("quarkusSelector"), Map.class));
+                Map<String, Object> selector = MAPPER.convertValue(node.get("quarkusSelector"), Map.class);
+                if (selector.get("dependencies") instanceof Map<?, ?> dependencies) {
+                    // the catalog build adds the versions
+                    Map<Object, Object> versionless = new TreeMap<>();
+                    dependencies.forEach((kind, gavs) -> versionless.put(
+                            kind,
+                            ((List<?>) gavs)
+                                    .stream()
+                                            .map(gav -> (String) gav)
+                                            .peek(gav -> assertThat(gav).matches("mvn:[^:]+:[^:]+:[^:]+"))
+                                            .map(gav -> gav.substring(0, gav.lastIndexOf(':')))
+                                            .toList()));
+                    selector.put("dependencies", versionless);
+                }
+                Object previous = selectors.put(node.get("name").asText(), selector);
                 assertThat(previous).isIn(null, selectors.get(node.get("name").asText()));
             });
             assertThat(selectors).isEqualTo(expected);

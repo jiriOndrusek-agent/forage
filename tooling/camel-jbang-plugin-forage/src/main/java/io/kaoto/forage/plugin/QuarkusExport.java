@@ -28,10 +28,11 @@ import io.kaoto.forage.core.util.config.PropertyFileSource;
 
 /**
  * Adds, on {@code camel export --runtime=quarkus}, native {@code quarkus.*} keys for the Forage modules the catalog maps
- * (today the JDBC datasources and the default Artemis JMS connection factory) to the exported
- * {@code application.properties}, so the exported app needs no Forage runtime for them. The {@code forage.*} keys
- * stay; each Quarkus key reads its Forage key as {@code ${forage.<key>:<value>}}, so {@code FORAGE_*} and
- * {@code -Dforage.*} still win. A module with anything the catalog does not map stays {@code forage.*} as before.
+ * (today the JDBC datasources, the default Artemis JMS connection factory and the default agent's chat model) to the
+ * exported {@code application.properties}, so the exported app needs no Forage runtime for them, or for the agent no
+ * Forage model artifact. The {@code forage.*} keys stay; each Quarkus key reads its Forage key as
+ * {@code ${forage.<key>:<value>}}, so {@code FORAGE_*} and {@code -Dforage.*} still win. A module with anything the
+ * catalog does not map stays {@code forage.*} as before, except one whose Forage runtime stays (the agent).
  */
 final class QuarkusExport {
 
@@ -39,11 +40,12 @@ final class QuarkusExport {
 
     /**
      * A Quarkus key ({@code {name}}: the quoted configuration name; ending with {@code .}: a map), and a unit; or none,
-     * {@code ignored}: the Forage key has no effect on Quarkus; {@code selector}: the key selects the bean.
+     * {@code ignored}: the Forage key has no effect on Quarkus; {@code selector}: the key selects the bean of
+     * {@code feature}.
      */
-    private record To(String key, String unit, boolean ignored, QuarkusSelector selector) {}
+    private record To(String key, String unit, boolean ignored, QuarkusSelector selector, String feature) {}
 
-    private static final To IGNORED = new To(null, "", true, null);
+    private static final To IGNORED = new To(null, "", true, null, null);
 
     /**
      * Per module: the Forage keys (after {@code forage.[<name>.]<module>.}; ending with {@code .}: a map) with a
@@ -62,22 +64,37 @@ final class QuarkusExport {
                 if (to != null) {
                     keys.put(
                             to.endsWith(".") ? key + "." : key,
-                            new To(to, entry.getQuarkusUnit() == null ? "" : entry.getQuarkusUnit(), false, selector));
+                            new To(
+                                    to,
+                                    entry.getQuarkusUnit() == null ? "" : entry.getQuarkusUnit(),
+                                    false,
+                                    selector,
+                                    entry.getSelectsFrom()));
                 } else if (entry.isQuarkusIgnored()) {
                     keys.put(key, IGNORED);
                 } else if (selector != null || entry.isQuarkusHandled()) {
-                    keys.put(key, new To(null, "", false, selector));
+                    keys.put(key, new To(null, "", false, selector, entry.getSelectsFrom()));
                 }
             }
-            if (keys.values().stream().anyMatch(to -> to.key() != null)) {
+            if (keys.values().stream()
+                    .anyMatch(to -> to.key() != null
+                            || (to.selector() != null && to.selector().getProperties() != null))) {
                 table.put(module, keys);
             }
         }
         return table;
     }
 
-    /** The added Quarkus properties, and the translated modules (their Forage artifacts are not needed). */
-    record Result(Map<String, String> properties, Set<String> modules, List<String> notes) {}
+    /**
+     * The added Quarkus properties, the translated modules (their Forage artifacts are not needed), and for modules
+     * that keep their Forage runtime the bean artifacts replaced by the added Quarkus artifacts (catalog GAVs).
+     */
+    record Result(
+            Map<String, String> properties,
+            Set<String> modules,
+            List<String> notes,
+            Set<String> removedDependencies,
+            Set<String> addedDependencies) {}
 
     private QuarkusExport() {}
 
@@ -112,7 +129,8 @@ final class QuarkusExport {
 
     static Result translate(Path resources, Properties application) throws IOException {
         ForageCatalogReader catalog = ForageCatalogReader.getInstance();
-        Result result = new Result(new TreeMap<>(), new TreeSet<>(), new ArrayList<>());
+        Result result =
+                new Result(new TreeMap<>(), new TreeSet<>(), new ArrayList<>(), new TreeSet<>(), new TreeSet<>());
         List<String> locations = new ArrayList<>();
         Map<String, Map<String, To>> table = table(catalog);
         for (String module : table.keySet()) {
@@ -132,6 +150,7 @@ final class QuarkusExport {
             }
             Map<String, String> translated = new TreeMap<>();
             List<String> ignored = new ArrayList<>();
+            List<String> kept = new ArrayList<>();
             for (var config : configs.entrySet()) {
                 if (reason == null) {
                     reason = translate(
@@ -141,7 +160,8 @@ final class QuarkusExport {
                             config.getKey(),
                             config.getValue(),
                             translated,
-                            ignored);
+                            ignored,
+                            kept);
                 }
             }
             if (reason == null) {
@@ -152,7 +172,9 @@ final class QuarkusExport {
                 continue;
             }
             result.properties().putAll(translated);
-            result.modules().add(module);
+            if (!replaceBeans(catalog, module, table.get(module), configs, result)) {
+                result.modules().add(module);
+            }
             locations.add(file);
             result.notes()
                     .add("Forage " + module + " exported as quarkus.* configuration; FORAGE_* and -Dforage.* still"
@@ -161,6 +183,10 @@ final class QuarkusExport {
                 result.notes()
                         .add("Forage " + module + ": " + String.join(", ", ignored)
                                 + " not translated, no effect on Quarkus.");
+            }
+            if (!kept.isEmpty()) {
+                result.notes()
+                        .add("Forage " + module + ": " + String.join(", ", kept) + " stay forage.* configuration.");
             }
         }
         if (!locations.isEmpty()) {
@@ -203,11 +229,31 @@ final class QuarkusExport {
             String name,
             Map<String, String> values,
             Map<String, String> translated,
-            List<String> ignored) {
+            List<String> ignored,
+            List<String> kept) {
         String prefix = "forage." + (name.isEmpty() ? "" : name + ".") + module + ".";
+        // the Quarkus keys of the selected kind; with replacement artifacts the Forage runtime stays and reads the rest
+        boolean keepsRuntime = false;
+        table = new TreeMap<>(table);
+        for (var entry : List.copyOf(table.entrySet())) {
+            QuarkusSelector selector = entry.getValue().selector();
+            if (selector != null && selector.getDependencies() != null) {
+                keepsRuntime = true;
+                String kind = values.get(prefix + entry.getKey());
+                if (selector.getProperties() != null && selector.getProperties().containsKey(kind)) {
+                    for (var key : selector.getProperties().get(kind).entrySet()) {
+                        table.put(key.getKey(), new To(key.getValue(), "", false, null, null));
+                    }
+                }
+            }
+        }
         for (var entry : values.entrySet()) {
             String suffix = entry.getKey().substring(prefix.length());
             if (!table.containsKey(suffix) && !(table.containsKey("properties.") && suffix.startsWith("properties."))) {
+                if (keepsRuntime) {
+                    kept.add(entry.getKey());
+                    continue;
+                }
                 return entry.getKey() + " has no Quarkus equivalent";
             }
             if (table.containsKey(suffix) && table.get(suffix).ignored()) {
@@ -222,6 +268,9 @@ final class QuarkusExport {
         var metadata = catalog.getFactoryMetadata(module).orElseThrow();
         Map<String, String> defaults = new TreeMap<>();
         for (ConfigEntry entry : metadata.configEntries()) {
+            if (!entry.getName().startsWith("forage." + module + ".")) {
+                continue; // a bean's entry (the agent's model beans)
+            }
             String key = prefix + entry.getName().substring(("forage." + module + ".").length());
             if (entry.getDefaultValue() != null) {
                 defaults.put(key, entry.getDefaultValue());
@@ -238,7 +287,10 @@ final class QuarkusExport {
                 return "named configurations have no Quarkus equivalent";
             }
             String kind = values.get(prefix + entry.getKey());
-            if (catalog.getBeanRuntimeDependencies(kind, "quarkus").isEmpty()
+            if ((selector.getDependencies() != null
+                            ? !selector.getDependencies().containsKey(kind)
+                            : catalog.getBeanRuntimeDependencies(kind, "quarkus")
+                                    .isEmpty())
                     || (selector.getKinds() != null && !selector.getKinds().containsKey(kind))) {
                 return "the kind of " + prefix + "* has no Quarkus equivalent in the Forage catalog";
             }
@@ -254,6 +306,9 @@ final class QuarkusExport {
             }
             String key = to.key().replace("{name}", quarkusName);
             String forageKey = prefix + entry.getKey();
+            if (keepsRuntime && !values.containsKey(forageKey) && !defaults.containsKey(forageKey)) {
+                continue; // the Forage runtime still translates FORAGE_* and -Dforage.* values
+            }
             if (key.endsWith(".")) {
                 values.forEach((k, v) -> {
                     if (k.startsWith(forageKey)) {
@@ -267,6 +322,34 @@ final class QuarkusExport {
             }
         }
         return null;
+    }
+
+    /**
+     * For a selector with replacement artifacts: adds the selected beans' artifacts to the removed and the replacements
+     * to the added dependencies, and returns {@code true} (the module keeps its Forage runtime).
+     */
+    private static boolean replaceBeans(
+            ForageCatalogReader catalog,
+            String module,
+            Map<String, To> table,
+            Map<String, Map<String, String>> configs,
+            Result result) {
+        boolean replaced = false;
+        for (var entry : table.entrySet()) {
+            QuarkusSelector selector = entry.getValue().selector();
+            if (selector == null || selector.getDependencies() == null) {
+                continue;
+            }
+            replaced = true;
+            for (var config : configs.entrySet()) {
+                String prefix = "forage." + (config.getKey().isEmpty() ? "" : config.getKey() + ".") + module + ".";
+                String kind = config.getValue().get(prefix + entry.getKey());
+                catalog.getFeatureBeanGav(module, entry.getValue().feature(), kind)
+                        .ifPresent(result.removedDependencies()::add);
+                result.addedDependencies().addAll(selector.getDependencies().get(kind));
+            }
+        }
+        return replaced;
     }
 
     /** Why other files the exported app reads keep the module forage.*, or {@code null}. */

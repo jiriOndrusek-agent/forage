@@ -10,11 +10,13 @@ This guide covers both version-to-version upgrade notes and migrating from frame
 
 #### Quarkus export writes JDBC and JMS configuration as Quarkus keys
 
-`camel export --runtime=quarkus` now adds `quarkus.*` keys for plain JDBC datasources (kinds with a Quarkus driver in the catalog: PostgreSQL, MySQL, MariaDB, H2) and the default Artemis connection factory, and leaves out their Forage artifacts. The `forage.*` keys stay. Each key is written as `${forage.<key>:<value>}`, and `quarkus.config.locations` lists the module files, so `FORAGE_*`, `-Dforage.*` and `forage-*.properties` files still override it. `quarkus-pooled-jms` is added only for `forage.jms.pool.enabled=true`, as before.
+`camel export --runtime=quarkus` now adds `quarkus.*` keys for plain JDBC datasources (kinds with a Quarkus driver in the catalog) and the default Artemis connection factory, and leaves out their Forage artifacts. The `forage.*` keys stay. Each key is written as `${forage.<key>:<value>}`, and `quarkus.config.locations` lists the module files, so `FORAGE_*`, `-Dforage.*` and `forage-*.properties` files still override it. `quarkus-pooled-jms` is added only for `forage.jms.pool.enabled=true`, as before.
 
 Keys without effect on Quarkus (catalog `quarkusIgnored`, today `forage.jms.pool.connection.timeout.millis`, which no runtime applies) do not block the translation; the export lists them in a note.
 
 A module stays `forage.*`, with a note, when any of its keys has no Quarkus equivalent (`transaction.*`, `ssl.*`, repositories, named or non-Artemis JMS, ...), a value contains `{` or `}`, it uses `%profile` keys or `application-<profile>.properties`, its module file is not ASCII or is in `~/.forage` / `FORAGE_CONFIG_DIR`, or the export reuses earlier run data. Set `FORAGE_QUARKUS_TRANSLATION_SKIP=true` (or `-Dforage.quarkus.translation.skip=true`) to keep everything on `forage.*`.
+
+For the default agent with a chat model kind that has a quarkus-langchain4j extension (catalog `quarkusSelector.dependencies`), the export writes the set model keys (`api.key`, `base.url`, `model.name`, ...) as `quarkus.langchain4j.<provider>.*` keys, adds `quarkus-langchain4j-<provider>` and `forage-quarkus-agent-langchain4j-deployment`, and leaves out `forage-model-<provider>`. The Forage agent stays: memory, guardrails, RAG and embedding keys stay `forage.*`, and the export lists them in a note. Named agents and other kinds stay `forage.*`. Keys that quarkus-langchain4j fixes at build time (e.g. the Ollama `chat-model.model-id`) ignore a runtime `FORAGE_*` / `-Dforage.*` override.
 
 Differences for translated modules: a datasource name or `properties.*` key defined only at runtime by `FORAGE_*` / `-Dforage.*` is not picked up, nor a `~/.forage` file added later; when both `FORAGE_X` and `-Dforage.x` are set, `-Dforage.x` wins; Quarkus merges the module files per key, Forage reads only the first file found.
 

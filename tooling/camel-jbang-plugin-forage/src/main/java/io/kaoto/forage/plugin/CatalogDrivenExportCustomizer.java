@@ -30,10 +30,19 @@ public class CatalogDrivenExportCustomizer implements ExportCustomizer {
     private Map<String, Map<String, List<String>>> scannedProperties;
     private Boolean enabled;
     private Set<String> quarkusModules = Set.of();
+    private Set<String> removedDependencies = Set.of();
+    private Set<String> addedDependencies = Set.of();
 
     /** The modules exported as quarkus.* configuration: their Forage artifacts are not added. */
     CatalogDrivenExportCustomizer quarkusModules(Set<String> modules) {
         this.quarkusModules = modules;
+        return this;
+    }
+
+    /** Bean artifacts replaced by Quarkus artifacts in the Quarkus export (catalog GAVs). */
+    CatalogDrivenExportCustomizer quarkusDependencies(Set<String> removed, Set<String> added) {
+        this.removedDependencies = removed;
+        this.addedDependencies = added;
         return this;
     }
 
@@ -132,6 +141,10 @@ public class CatalogDrivenExportCustomizer implements ExportCustomizer {
             }
             all.addAll(dependencies);
         }
+        removedDependencies.stream()
+                .map(CatalogDrivenExportCustomizer::toMvnGav)
+                .forEach(all::remove);
+        addedDependencies.stream().map(CatalogDrivenExportCustomizer::toMvnGav).forEach(all::add);
 
         LOG.debug("Resolved {} dependencies for runtime {}", all.size(), runtime);
         all.forEach(dep -> LOG.debug("  Dependency: {}", dep));

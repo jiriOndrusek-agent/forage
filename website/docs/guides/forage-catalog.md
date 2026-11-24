@@ -164,7 +164,7 @@ Config entries define the properties a user can set. Each entry carries enough m
 | `quarkusUnit` | Unit appended to the Quarkus value (`S`, `M`). Present only when there is one |
 | `quarkusIgnored` | `true`: the entry has no effect on Quarkus, so `camel export --runtime=quarkus` leaves it untranslated (with a note). From the module descriptor's `quarkusIgnoredProperties()`. Present only when `true` |
 | `quarkusHandled` | `true`: the entry has no Quarkus key of its own, but the export handles it (e.g. `forage.jms.pool.enabled`, a catalog condition). From the module descriptor's `quarkusHandledProperties()`. Present only when `true` |
-| `quarkusSelector` | On the entry selecting the bean (e.g. `forage.jdbc.db.kind`): the selected bean needs Quarkus runtime dependencies in the catalog. `kinds`: the kinds translated, each with the Quarkus keys it adds (absent: any kind). `defaultOnly`: named configurations are not translated. From the module descriptor's `quarkusSelector()` |
+| `quarkusSelector` | On the entry selecting the bean (e.g. `forage.jdbc.db.kind`): the selected bean needs Quarkus runtime dependencies in the catalog. `kinds`: the kinds translated, each with the Quarkus keys it adds (absent: any kind). `defaultOnly`: named configurations are not translated. `properties`: per kind, the Quarkus key of each Forage key (e.g. the agent's chat model keys). `dependencies`: per kind, the Quarkus artifacts that replace the selected bean's artifact; the module then keeps its Forage runtime and its other keys stay `forage.*`. From the module descriptor's `quarkusSelector()` |
 
 **Supported types:**
 
