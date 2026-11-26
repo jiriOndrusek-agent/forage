@@ -45,7 +45,10 @@ import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
         value = "ollama",
         components = {"camel-langchain4j-agent"},
         feature = "Embeddings Model",
-        description = "Locally-hosted models via Ollama (Llama, Mistral, etc.)")
+        description = "Locally-hosted models via Ollama (Llama, Mistral, etc.)",
+        // Mirrors AgentConfig#hasEmbeddingConfig(): the agent creates its embedding model as soon as one of
+        // these is set
+        enabledBy = {"forage.agent.embedding.model.name", "forage.agent.in.memory.store.file.source"})
 public class OllamaEmbeddingProvider implements EmbeddingModelProvider {
     private static final Logger LOG = LoggerFactory.getLogger(OllamaEmbeddingProvider.class);
 

@@ -436,6 +436,29 @@ class CatalogDrivenExportCustomizerTest {
         assertThat(deps).noneMatch(d -> d.contains("forage-default-retrieval-augmentor:"));
     }
 
+    @ParameterizedTest
+    @EnumSource(RuntimeType.class)
+    void testChatModelKind_hasNoEmbeddingsModel(RuntimeType runtime) throws Exception {
+        // model.kind selects a Chat Model bean: the Embeddings Model bean of the same name is not used
+        CatalogDrivenExportCustomizer customizer = createCustomizer("forage.agent.model.kind=ollama\n"
+                + "forage.agent.model.name=granite4:3b\n"
+                + "forage.agent.base.url=http://localhost:11434\n");
+
+        Set<String> deps = customizer.resolveRuntimeDependencies(runtime);
+        assertThat(deps).anyMatch(d -> d.contains("forage-model-ollama:"));
+        assertThat(deps).noneMatch(d -> d.contains("forage-model-embeddings-ollama:"));
+    }
+
+    @Test
+    void testOllamaEmbeddingsConfigured_hasEmbeddingsModel() throws Exception {
+        CatalogDrivenExportCustomizer customizer = createCustomizer("forage.agent.model.kind=ollama\n"
+                + "forage.agent.model.name=granite4:3b\n"
+                + "forage.ollama.embedding.model.name=granite-embedding:latest\n");
+
+        Set<String> deps = customizer.resolveRuntimeDependencies(RuntimeType.QUARKUS);
+        assertThat(deps).anyMatch(d -> d.contains("forage-model-embeddings-ollama:"));
+    }
+
     @Test
     void testMultipleNamedInstances_springBootRuntime() throws Exception {
         // This is the MultiTest scenario: ds1=mysql, ds2=postgresql
