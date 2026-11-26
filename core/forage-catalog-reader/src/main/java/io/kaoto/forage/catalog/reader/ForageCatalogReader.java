@@ -729,6 +729,27 @@ public final class ForageCatalogReader {
     }
 
     /**
+     * Gets the GAV of a bean of one feature of a factory: bean names are unique per feature only (the agent
+     * {@code ollama} chat model and embedding model).
+     *
+     * @param factoryTypeKey the factory type key (e.g., "agent")
+     * @param feature the feature (e.g., "Chat Model")
+     * @param beanName the bean name (e.g., "ollama")
+     * @return the GAV, or empty if not found
+     */
+    public Optional<String> getFeatureBeanGav(String factoryTypeKey, String feature, String beanName) {
+        return findFactoryByTypeKey(factoryTypeKey).stream()
+                .filter(factory -> factory.getBeansByFeature() != null)
+                .flatMap(factory -> factory.getBeansByFeature().stream())
+                .filter(featureBeans ->
+                        featureBeans.getFeature().equalsIgnoreCase(feature) && featureBeans.getBeans() != null)
+                .flatMap(featureBeans -> featureBeans.getBeans().stream())
+                .filter(bean -> bean.getName().equalsIgnoreCase(beanName))
+                .map(ForageBean::getGav)
+                .findFirst();
+    }
+
+    /**
      * Gets bean names for a specific feature category across all factories.
      *
      * <p><b>Factory vs Feature:</b>

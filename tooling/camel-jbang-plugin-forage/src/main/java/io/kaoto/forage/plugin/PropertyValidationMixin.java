@@ -1,10 +1,10 @@
 package io.kaoto.forage.plugin;
 
-import org.apache.camel.dsl.jbang.core.common.Printer;
-import picocli.CommandLine;
+import org.aesh.command.option.Option;
+import org.apache.camel.dsl.jbang.run.common.Printer;
 
 /**
- * PicoCli mixin for property validation options.
+ * Mixin for property validation options.
  *
  * <p>This mixin provides common command-line options for property validation
  * and a helper method to validate properties using the ForagePropertyValidator.
@@ -13,14 +13,16 @@ import picocli.CommandLine;
  */
 public class PropertyValidationMixin {
 
-    @CommandLine.Option(
-            names = {"--strict"},
+    @Option(
+            name = "strict",
+            hasValue = false,
             description = "Fail on property validation warnings",
             defaultValue = "false")
     private boolean strict;
 
-    @CommandLine.Option(
-            names = {"--skip-validation"},
+    @Option(
+            name = "skip-validation",
+            hasValue = false,
             description = "Skip property validation",
             defaultValue = "false")
     private boolean skipValidation;

@@ -2,6 +2,8 @@ package io.kaoto.forage.maven.catalog;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -11,7 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
@@ -24,6 +28,7 @@ import io.kaoto.forage.catalog.model.ForageBean;
 import io.kaoto.forage.catalog.model.ForageCatalog;
 import io.kaoto.forage.catalog.model.ForageConfigurationCatalog;
 import io.kaoto.forage.catalog.model.ForageFactory;
+import io.kaoto.forage.catalog.model.QuarkusSelector;
 import io.kaoto.forage.core.annotations.FactoryType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -69,7 +74,142 @@ public class CatalogGenerator {
 
         log.info("Found " + components.size() + " Forage components");
 
+        addQuarkusProperties(project, components);
+
         return generateCatalog(components, project.getProperties(), outputDirectory);
+    }
+
+    /**
+     * Sets {@code quarkusProperty} / {@code quarkusUnit} on the config entries listed by a module descriptor's
+     * {@code quarkusProperties()} (forageKey, quarkusKey, unit), and {@code quarkusIgnored} on those listed by
+     * {@code quarkusIgnoredProperties()}, {@code quarkusHandled} on those listed by {@code quarkusHandledProperties()}
+     * (Forage keys), and {@code quarkusSelector} on the entry named by {@code quarkusSelector()}, with its optional
+     * per-kind {@code properties} and {@code dependencies} (versions resolved as for the bean dependencies). The descriptors are
+     * loaded from the project classpath in an isolated class loader and read by reflection: the plugin does not depend
+     * on the modules.
+     */
+    private void addQuarkusProperties(MavenProject project, List<ForageComponent> components) throws IOException {
+        List<URL> urls = new ArrayList<>();
+        for (Artifact artifact : project.getArtifacts()) {
+            if (artifact.getFile() != null) {
+                urls.add(artifact.getFile().toURI().toURL());
+            }
+        }
+        try (URLClassLoader loader =
+                new URLClassLoader(urls.toArray(URL[]::new), ClassLoader.getPlatformClassLoader())) {
+            for (ForageComponent component : components) {
+                for (String descriptorClass : component.getModuleDescriptors()) {
+                    Class<?> type = loader.loadClass(descriptorClass);
+                    if (Stream.of(type.getMethods())
+                            .noneMatch(m -> m.getName().equals("quarkusProperties")
+                                    || m.getName().equals("quarkusSelector"))) {
+                        continue; // no Quarkus export for this module
+                    }
+                    Object descriptor = type.getConstructor().newInstance();
+                    String module = (String) call(descriptor, "modulePrefix");
+                    for (Object property : list(descriptor, "quarkusProperties")) {
+                        String forageKey = (String) call(property, "forageKey");
+                        String name = "forage." + module + "."
+                                + (forageKey.endsWith(".")
+                                        ? forageKey.substring(0, forageKey.length() - 1)
+                                        : forageKey);
+                        String unit = (String) call(property, "unit");
+                        for (ConfigEntry entry : entries(components, descriptorClass + ".quarkusProperties()", name)) {
+                            entry.setQuarkusProperty((String) call(property, "quarkusKey"));
+                            entry.setQuarkusUnit(unit.isEmpty() ? null : unit);
+                        }
+                    }
+                    for (Object forageKey : list(descriptor, "quarkusIgnoredProperties")) {
+                        String name = "forage." + module + "." + forageKey;
+                        for (ConfigEntry entry :
+                                entries(components, descriptorClass + ".quarkusIgnoredProperties()", name)) {
+                            if (entry.getQuarkusProperty() != null) {
+                                throw new IllegalStateException(descriptorClass + " lists " + name
+                                        + " in both quarkusProperties() and quarkusIgnoredProperties()");
+                            }
+                            entry.setQuarkusIgnored(true);
+                        }
+                    }
+                    for (Object forageKey : list(descriptor, "quarkusHandledProperties")) {
+                        String name = "forage." + module + "." + forageKey;
+                        entries(components, descriptorClass + ".quarkusHandledProperties()", name)
+                                .forEach(entry -> entry.setQuarkusHandled(true));
+                    }
+                    Object selector = optional(descriptor, "quarkusSelector");
+                    if (selector != null) {
+                        String name = "forage." + module + "." + call(selector, "forageKey");
+                        Map<String, Map<String, String>> kinds = null;
+                        if (call(selector, "kinds") instanceof Map<?, ?> map) {
+                            kinds = new TreeMap<>(); // sorted: a stable catalog
+                            for (var kind : map.entrySet()) {
+                                Map<String, String> keys = new TreeMap<>();
+                                ((Map<?, ?>) kind.getValue()).forEach((k, v) -> keys.put((String) k, (String) v));
+                                kinds.put((String) kind.getKey(), keys);
+                            }
+                        }
+                        boolean defaultOnly = (Boolean) call(selector, "defaultOnly");
+                        Map<String, Map<String, String>> properties = null;
+                        if (optional(selector, "properties") instanceof Map<?, ?> map) {
+                            properties = new TreeMap<>();
+                            for (var kind : map.entrySet()) {
+                                Map<String, String> keys = new TreeMap<>();
+                                ((Map<?, ?>) kind.getValue()).forEach((k, v) -> keys.put((String) k, (String) v));
+                                properties.put((String) kind.getKey(), keys);
+                            }
+                        }
+                        Map<String, List<String>> dependencies = null;
+                        if (optional(selector, "dependencies") instanceof Map<?, ?> map) {
+                            dependencies = new TreeMap<>();
+                            for (var kind : map.entrySet()) {
+                                List<String> gavs = ((List<?>) kind.getValue())
+                                        .stream().map(String.class::cast).toList();
+                                dependencies.put(
+                                        (String) kind.getKey(), resolveGavVersions(gavs, project.getProperties()));
+                            }
+                        }
+                        for (ConfigEntry entry : entries(components, descriptorClass + ".quarkusSelector()", name)) {
+                            QuarkusSelector quarkusSelector = new QuarkusSelector(kinds, defaultOnly);
+                            quarkusSelector.setProperties(properties);
+                            quarkusSelector.setDependencies(dependencies);
+                            entry.setQuarkusSelector(quarkusSelector);
+                        }
+                    }
+                }
+            }
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Cannot read the Quarkus properties of the module descriptors", e);
+        }
+    }
+
+    /** The config entries named {@code name}; fails when there is none. */
+    private static List<ConfigEntry> entries(List<ForageComponent> components, String source, String name) {
+        List<ConfigEntry> entries = components.stream()
+                .filter(c -> c.getConfigurationProperties() != null)
+                .flatMap(c -> c.getConfigurationProperties().stream())
+                .filter(e -> name.equals(e.getName()))
+                .toList();
+        if (entries.isEmpty()) {
+            throw new IllegalStateException(source + " lists " + name + ", not a config entry");
+        }
+        return entries;
+    }
+
+    private static Object call(Object target, String method) throws ReflectiveOperationException {
+        return target.getClass().getMethod(method).invoke(target);
+    }
+
+    /** The result of {@code method}, or {@code null} when the descriptor has no such method. */
+    private static Object optional(Object target, String method) throws ReflectiveOperationException {
+        try {
+            return call(target, method);
+        } catch (NoSuchMethodException e) {
+            return null;
+        }
+    }
+
+    private static List<?> list(Object target, String method) throws ReflectiveOperationException {
+        Object list = optional(target, method);
+        return list == null ? List.of() : (List<?>) list;
     }
 
     /**
@@ -801,6 +941,7 @@ public class CatalogGenerator {
         component.setFactories(scanResult.getFactories());
         component.setConfigurationProperties(scanResult.getConfigProperties());
         component.setConfigClasses(scanResult.getConfigClasses());
+        component.setModuleDescriptors(scanResult.getModuleDescriptors());
 
         return component;
     }

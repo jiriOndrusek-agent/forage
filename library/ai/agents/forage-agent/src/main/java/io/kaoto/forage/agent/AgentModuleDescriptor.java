@@ -1,7 +1,11 @@
 package io.kaoto.forage.agent;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.apache.camel.component.langchain4j.agent.api.Agent;
 import io.kaoto.forage.core.ai.ModelProvider;
 import io.kaoto.forage.core.common.ForageModuleDescriptor;
@@ -53,232 +57,266 @@ public class AgentModuleDescriptor implements ForageModuleDescriptor<AgentConfig
         return false;
     }
 
-    private static final String PROVIDER_OLLAMA = "ollama";
-    private static final String PROVIDER_OPENAI = "openai";
-    private static final String PROVIDER_ANTHROPIC = "anthropic";
-    private static final String PROVIDER_AZURE_OPENAI = "azure-openai";
-    private static final String PROVIDER_BEDROCK = "bedrock";
-    private static final String PROP_BASE_URL = "base-url";
-    private static final String PROP_MODEL_ID = "chat-model.model-id";
-    private static final String PROP_TEMPERATURE = "chat-model.temperature";
-    private static final String PROP_TOP_P = "chat-model.top-p";
-    private static final String PROP_TOP_K = "chat-model.top-k";
-    private static final String PROP_API_KEY = "api-key";
-    private static final String PROP_MODEL_NAME = "chat-model.model-name";
-    private static final String PROP_MAX_TOKENS = "chat-model.max-tokens";
+    /** A Forage key (after {@code forage.[<name>.]agent.}) written as a Quarkus key with the value of {@code value}. */
+    public record QuarkusProperty(String forageKey, String quarkusKey, Function<AgentConfig, Object> value) {}
 
-    private static final Map<String, String> QUARKUS_EXTENSION_CLASSES = Map.of(
-            PROVIDER_OLLAMA,
-            "io.quarkiverse.langchain4j.ollama.runtime.config.LangChain4jOllamaConfig",
-            PROVIDER_OPENAI,
-            "io.quarkiverse.langchain4j.openai.runtime.config.LangChain4jOpenAiConfig",
-            PROVIDER_ANTHROPIC,
-            "io.quarkiverse.langchain4j.anthropic.runtime.config.LangChain4jAnthropicConfig",
+    /**
+     * A model kind with a quarkus-langchain4j extension: a class of the extension (translate only when present), its
+     * artifactId and the keys translated.
+     */
+    private record QuarkusModel(String extensionClass, String artifactId, List<QuarkusProperty> properties) {}
+
+    private static final Map<String, Function<AgentConfig, Object>> VALUES = Map.ofEntries(
+            Map.entry("api.key", AgentConfig::apiKey),
+            Map.entry("base.url", AgentConfig::baseUrl),
+            Map.entry("model.name", AgentConfig::modelName),
+            Map.entry("temperature", AgentConfig::temperature),
+            Map.entry("top.p", AgentConfig::topP),
+            Map.entry("top.k", AgentConfig::topK),
+            Map.entry("max.tokens", AgentConfig::maxTokens),
+            Map.entry("endpoint", AgentConfig::endpoint),
+            Map.entry("deployment.name", AgentConfig::deploymentName),
+            Map.entry("log.requests", AgentConfig::logRequests),
+            Map.entry("log.responses", AgentConfig::logResponses));
+
+    // Each model kind maps to a separate Quarkus provider namespace (e.g., quarkus.langchain4j.ollama.*), so the
+    // default (non-named) config is used. Quarkus named configs would only be needed for multiple agents with the same
+    // model kind, which is not yet supported.
+    private static final Map<String, QuarkusModel> QUARKUS_MODELS = Map.of(
+            "ollama",
+            model(
+                    "ollama.runtime.config.LangChain4jOllamaConfig",
+                    "ollama",
+                    "ollama",
+                    "base.url",
+                    "base-url",
+                    "model.name",
+                    "chat-model.model-id",
+                    "temperature",
+                    "chat-model.temperature",
+                    "top.p",
+                    "chat-model.top-p",
+                    "top.k",
+                    "chat-model.top-k"),
+            "openai",
+            model(
+                    "openai.runtime.config.LangChain4jOpenAiConfig",
+                    "openai",
+                    "openai",
+                    "base.url",
+                    "base-url",
+                    "api.key",
+                    "api-key",
+                    "model.name",
+                    "chat-model.model-name",
+                    "temperature",
+                    "chat-model.temperature",
+                    "top.p",
+                    "chat-model.top-p",
+                    "max.tokens",
+                    "chat-model.max-tokens"),
+            "anthropic",
+            model(
+                    "anthropic.runtime.config.LangChain4jAnthropicConfig",
+                    "anthropic",
+                    "anthropic",
+                    "base.url",
+                    "base-url",
+                    "api.key",
+                    "api-key",
+                    "model.name",
+                    "chat-model.model-name",
+                    "temperature",
+                    "chat-model.temperature",
+                    "top.p",
+                    "chat-model.top-p",
+                    "top.k",
+                    "chat-model.top-k",
+                    "max.tokens",
+                    "chat-model.max-tokens"),
             "google-gemini",
-            "io.quarkiverse.langchain4j.ai.runtime.gemini.config.LangChain4jAiGeminiConfig",
-            PROVIDER_AZURE_OPENAI,
-            "io.quarkiverse.langchain4j.azure.openai.runtime.config.LangChain4jAzureOpenAiConfig",
+            model(
+                    "ai.runtime.gemini.config.LangChain4jAiGeminiConfig",
+                    "ai-gemini",
+                    "ai.gemini",
+                    "api.key",
+                    "api-key",
+                    "base.url",
+                    "base-url",
+                    "model.name",
+                    "chat-model.model-id",
+                    "temperature",
+                    "chat-model.temperature",
+                    "top.p",
+                    "chat-model.top-p",
+                    "top.k",
+                    "chat-model.top-k",
+                    "max.tokens",
+                    "chat-model.max-output-tokens"),
+            // endpoint + deployment-name instead of base-url + model-name
+            "azure-openai",
+            model(
+                    "azure.openai.runtime.config.LangChain4jAzureOpenAiConfig",
+                    "azure-openai",
+                    "azure-openai",
+                    "api.key",
+                    "api-key",
+                    "endpoint",
+                    "endpoint",
+                    "deployment.name",
+                    "deployment-name",
+                    "temperature",
+                    "chat-model.temperature",
+                    "top.p",
+                    "chat-model.top-p",
+                    "max.tokens",
+                    "chat-model.max-tokens"),
             "mistral-ai",
-            "io.quarkiverse.langchain4j.mistralai.runtime.config.LangChain4jMistralAiConfig",
+            model(
+                    "mistralai.runtime.config.LangChain4jMistralAiConfig",
+                    "mistral-ai",
+                    "mistralai",
+                    "base.url",
+                    "base-url",
+                    "api.key",
+                    "api-key",
+                    "model.name",
+                    "chat-model.model-name",
+                    "temperature",
+                    "chat-model.temperature",
+                    "top.p",
+                    "chat-model.top-p",
+                    "max.tokens",
+                    "chat-model.max-tokens"),
             "hugging-face",
-            "io.quarkiverse.langchain4j.huggingface.runtime.config.LangChain4jHuggingFaceConfig",
+            model(
+                    "huggingface.runtime.config.LangChain4jHuggingFaceConfig",
+                    "hugging-face",
+                    "huggingface",
+                    "api.key",
+                    "api-key",
+                    "base.url",
+                    "chat-model.inference-endpoint-url",
+                    "temperature",
+                    "chat-model.temperature",
+                    "top.p",
+                    "chat-model.top-p",
+                    "top.k",
+                    "chat-model.top-k",
+                    "max.tokens",
+                    "chat-model.max-new-tokens"),
             "watsonx-ai",
-            "io.quarkiverse.langchain4j.watsonx.runtime.config.LangChain4jWatsonxConfig",
-            PROVIDER_BEDROCK,
-            "io.quarkiverse.langchain4j.bedrock.runtime.config.LangChain4jBedrockConfig");
+            model(
+                    "watsonx.runtime.config.LangChain4jWatsonxConfig",
+                    "watsonx",
+                    "watsonx",
+                    "base.url",
+                    "base-url",
+                    "api.key",
+                    "api-key",
+                    "model.name",
+                    "chat-model.model-name",
+                    "temperature",
+                    "chat-model.temperature",
+                    "top.p",
+                    "chat-model.top-p",
+                    "max.tokens",
+                    "chat-model.max-output-tokens"),
+            "bedrock",
+            model(
+                    "bedrock.runtime.config.LangChain4jBedrockConfig",
+                    "bedrock",
+                    "bedrock",
+                    "model.name",
+                    "chat-model.model-id",
+                    "temperature",
+                    "chat-model.temperature",
+                    "top.p",
+                    "chat-model.top-p",
+                    "top.k",
+                    "chat-model.top-k",
+                    "max.tokens",
+                    "chat-model.max-tokens"));
+
+    /**
+     * @param extensionClass after {@code io.quarkiverse.langchain4j.}
+     * @param artifactId after {@code quarkus-langchain4j-}
+     * @param namespace after {@code quarkus.langchain4j.}
+     * @param keys pairs: Forage key, Quarkus key after the namespace; the log keys are added
+     */
+    private static QuarkusModel model(String extensionClass, String artifactId, String namespace, String... keys) {
+        List<QuarkusProperty> properties = new ArrayList<>();
+        for (int i = 0; i < keys.length; i += 2) {
+            properties.add(new QuarkusProperty(
+                    keys[i], "quarkus.langchain4j." + namespace + "." + keys[i + 1], VALUES.get(keys[i])));
+        }
+        for (String log : List.of("log.requests", "log.responses")) {
+            properties.add(new QuarkusProperty(
+                    log, "quarkus.langchain4j." + namespace + "." + log.replace('.', '-'), VALUES.get(log)));
+        }
+        return new QuarkusModel(
+                "io.quarkiverse.langchain4j." + extensionClass, "quarkus-langchain4j-" + artifactId, properties);
+    }
+
+    /**
+     * The Forage key (after {@code forage.[<name>.]agent.}) selecting the bean, the kinds the export translates with the
+     * Quarkus keys each adds ({@code null}: none), whether only the default configuration is translated, and per kind
+     * the Quarkus key of each Forage key and the Quarkus artifacts replacing the kind's Forage bean.
+     */
+    public record QuarkusSelector(
+            String forageKey,
+            Map<String, Map<String, String>> kinds,
+            boolean defaultOnly,
+            Map<String, Map<String, String>> properties,
+            Map<String, List<String>> dependencies) {}
+
+    /**
+     * The selector of the Quarkus export: the chat model kinds with a quarkus-langchain4j extension, default agent
+     * only (the translation writes the default Quarkus model). The Forage agent stays; its other keys stay forage.*.
+     * Read by the catalog build.
+     */
+    public QuarkusSelector quarkusSelector() {
+        Map<String, Map<String, String>> properties = new HashMap<>();
+        Map<String, List<String>> dependencies = new HashMap<>();
+        QUARKUS_MODELS.forEach((kind, model) -> {
+            properties.put(
+                    kind,
+                    model.properties().stream()
+                            .collect(Collectors.toMap(QuarkusProperty::forageKey, QuarkusProperty::quarkusKey)));
+            dependencies.put(
+                    kind,
+                    List.of(
+                            "mvn:io.quarkiverse.langchain4j:" + model.artifactId(),
+                            "mvn:io.kaoto.forage:forage-quarkus-agent-langchain4j-deployment"));
+        });
+        return new QuarkusSelector("model.kind", null, true, properties, dependencies);
+    }
 
     @Override
     public Map<String, String> translateProperties(String prefix, AgentConfig config) {
-        String modelKind = config.modelKind();
-        if (modelKind == null) {
+        QuarkusModel model = config.modelKind() == null ? null : QUARKUS_MODELS.get(config.modelKind());
+        if (model == null) {
             return Map.of();
         }
 
         // Only translate when the corresponding quarkus-langchain4j extension is on
         // the classpath. Otherwise Forage creates the ChatModel via ServiceLoader and
         // the translated properties would produce "Unrecognized configuration key" warnings.
-        String extensionClass = QUARKUS_EXTENSION_CLASSES.get(modelKind);
-        if (extensionClass != null) {
-            try {
-                Class.forName(extensionClass, false, Thread.currentThread().getContextClassLoader());
-            } catch (ClassNotFoundException e) {
-                return Map.of();
-            }
+        try {
+            Class.forName(model.extensionClass(), false, Thread.currentThread().getContextClassLoader());
+        } catch (ClassNotFoundException e) {
+            return Map.of();
         }
-
-        return switch (modelKind) {
-            case PROVIDER_OLLAMA -> translateOllamaProperties(config);
-            case PROVIDER_OPENAI -> translateOpenAiProperties(config);
-            case PROVIDER_ANTHROPIC -> translateAnthropicProperties(config);
-            case "google-gemini" -> translateGeminiProperties(config);
-            case PROVIDER_AZURE_OPENAI -> translateAzureOpenAiProperties(config);
-            case "mistral-ai" -> translateMistralAiProperties(config);
-            case "hugging-face" -> translateHuggingFaceProperties(config);
-            case "watsonx-ai" -> translateWatsonxProperties(config);
-            case PROVIDER_BEDROCK -> translateBedrockProperties(config);
-            default -> Map.of();
-        };
+        return translate(config.modelKind(), config);
     }
 
-    // quarkus.langchain4j.ollama.*
-    // chat-model: model-id, temperature, top-p, top-k
-    private Map<String, String> translateOllamaProperties(AgentConfig config) {
+    /** The Quarkus keys of a model kind with a quarkus-langchain4j extension. */
+    static Map<String, String> translate(String modelKind, AgentConfig config) {
         Map<String, String> props = new HashMap<>();
-        String qp = quarkusPrefix(PROVIDER_OLLAMA);
-
-        putIfNotNull(props, qp + PROP_BASE_URL, config.baseUrl());
-        putIfNotNull(props, qp + PROP_MODEL_ID, config.modelName());
-        putIfNotNull(props, qp + PROP_TEMPERATURE, config.temperature());
-        putIfNotNull(props, qp + PROP_TOP_P, config.topP());
-        putIfNotNull(props, qp + PROP_TOP_K, config.topK());
-        addLoggingProperties(props, qp, config);
-
+        for (QuarkusProperty property : QUARKUS_MODELS.get(modelKind).properties()) {
+            putIfNotNull(props, property.quarkusKey(), property.value().apply(config));
+        }
         return props;
-    }
-
-    // quarkus.langchain4j.openai.*
-    // chat-model: model-name, temperature, top-p, max-tokens
-    private Map<String, String> translateOpenAiProperties(AgentConfig config) {
-        return translateStandardModelProperties(PROVIDER_OPENAI, config);
-    }
-
-    // quarkus.langchain4j.anthropic.*
-    // chat-model: model-name, temperature, top-p, top-k, max-tokens
-    private Map<String, String> translateAnthropicProperties(AgentConfig config) {
-        Map<String, String> props = new HashMap<>();
-        String qp = quarkusPrefix(PROVIDER_ANTHROPIC);
-
-        putIfNotNull(props, qp + PROP_BASE_URL, config.baseUrl());
-        putIfNotNull(props, qp + PROP_API_KEY, config.apiKey());
-        putIfNotNull(props, qp + PROP_MODEL_NAME, config.modelName());
-        putIfNotNull(props, qp + PROP_TEMPERATURE, config.temperature());
-        putIfNotNull(props, qp + PROP_TOP_P, config.topP());
-        putIfNotNull(props, qp + PROP_TOP_K, config.topK());
-        putIfNotNull(props, qp + PROP_MAX_TOKENS, config.maxTokens());
-        addLoggingProperties(props, qp, config);
-
-        return props;
-    }
-
-    // quarkus.langchain4j.ai.gemini.*
-    // chat-model: model-id, temperature, top-p, top-k, max-output-tokens
-    private Map<String, String> translateGeminiProperties(AgentConfig config) {
-        Map<String, String> props = new HashMap<>();
-        String qp = quarkusPrefix("ai.gemini");
-
-        putIfNotNull(props, qp + PROP_API_KEY, config.apiKey());
-        putIfNotNull(props, qp + PROP_BASE_URL, config.baseUrl());
-        putIfNotNull(props, qp + PROP_MODEL_ID, config.modelName());
-        putIfNotNull(props, qp + PROP_TEMPERATURE, config.temperature());
-        putIfNotNull(props, qp + PROP_TOP_P, config.topP());
-        putIfNotNull(props, qp + PROP_TOP_K, config.topK());
-        putIfNotNull(props, qp + "chat-model.max-output-tokens", config.maxTokens());
-        addLoggingProperties(props, qp, config);
-
-        return props;
-    }
-
-    // quarkus.langchain4j.azure-openai.*
-    // Uses endpoint + deployment-name instead of base-url + model-name
-    // chat-model: temperature, top-p, max-tokens
-    private Map<String, String> translateAzureOpenAiProperties(AgentConfig config) {
-        Map<String, String> props = new HashMap<>();
-        String qp = quarkusPrefix(PROVIDER_AZURE_OPENAI);
-
-        putIfNotNull(props, qp + PROP_API_KEY, config.apiKey());
-        putIfNotNull(props, qp + "endpoint", config.endpoint());
-        putIfNotNull(props, qp + "deployment-name", config.deploymentName());
-        putIfNotNull(props, qp + PROP_TEMPERATURE, config.temperature());
-        putIfNotNull(props, qp + PROP_TOP_P, config.topP());
-        putIfNotNull(props, qp + PROP_MAX_TOKENS, config.maxTokens());
-        addLoggingProperties(props, qp, config);
-
-        return props;
-    }
-
-    // quarkus.langchain4j.mistralai.*
-    // chat-model: model-name, temperature, top-p, max-tokens
-    private Map<String, String> translateMistralAiProperties(AgentConfig config) {
-        return translateStandardModelProperties("mistralai", config);
-    }
-
-    // quarkus.langchain4j.huggingface.*
-    // chat-model: inference-endpoint-url, temperature, top-p, top-k, max-new-tokens
-    private Map<String, String> translateHuggingFaceProperties(AgentConfig config) {
-        Map<String, String> props = new HashMap<>();
-        String qp = quarkusPrefix("huggingface");
-
-        putIfNotNull(props, qp + PROP_API_KEY, config.apiKey());
-        putIfNotNull(props, qp + "chat-model.inference-endpoint-url", config.baseUrl());
-        putIfNotNull(props, qp + PROP_TEMPERATURE, config.temperature());
-        putIfNotNull(props, qp + PROP_TOP_P, config.topP());
-        putIfNotNull(props, qp + PROP_TOP_K, config.topK());
-        putIfNotNull(props, qp + "chat-model.max-new-tokens", config.maxTokens());
-        addLoggingProperties(props, qp, config);
-
-        return props;
-    }
-
-    // quarkus.langchain4j.watsonx.*
-    // chat-model: model-name, temperature, top-p, max-output-tokens
-    private Map<String, String> translateWatsonxProperties(AgentConfig config) {
-        Map<String, String> props = new HashMap<>();
-        String qp = quarkusPrefix("watsonx");
-
-        putIfNotNull(props, qp + PROP_BASE_URL, config.baseUrl());
-        putIfNotNull(props, qp + PROP_API_KEY, config.apiKey());
-        putIfNotNull(props, qp + PROP_MODEL_NAME, config.modelName());
-        putIfNotNull(props, qp + PROP_TEMPERATURE, config.temperature());
-        putIfNotNull(props, qp + PROP_TOP_P, config.topP());
-        putIfNotNull(props, qp + "chat-model.max-output-tokens", config.maxTokens());
-        addLoggingProperties(props, qp, config);
-
-        return props;
-    }
-
-    // quarkus.langchain4j.bedrock.*
-    // chat-model: model-id, temperature, top-p, top-k, max-tokens
-    private Map<String, String> translateBedrockProperties(AgentConfig config) {
-        Map<String, String> props = new HashMap<>();
-        String qp = quarkusPrefix(PROVIDER_BEDROCK);
-
-        putIfNotNull(props, qp + PROP_MODEL_ID, config.modelName());
-        putIfNotNull(props, qp + PROP_TEMPERATURE, config.temperature());
-        putIfNotNull(props, qp + PROP_TOP_P, config.topP());
-        putIfNotNull(props, qp + PROP_TOP_K, config.topK());
-        putIfNotNull(props, qp + PROP_MAX_TOKENS, config.maxTokens());
-        addLoggingProperties(props, qp, config);
-
-        return props;
-    }
-
-    private Map<String, String> translateStandardModelProperties(String provider, AgentConfig config) {
-        Map<String, String> props = new HashMap<>();
-        String qp = quarkusPrefix(provider);
-
-        putIfNotNull(props, qp + PROP_BASE_URL, config.baseUrl());
-        putIfNotNull(props, qp + PROP_API_KEY, config.apiKey());
-        putIfNotNull(props, qp + PROP_MODEL_NAME, config.modelName());
-        putIfNotNull(props, qp + PROP_TEMPERATURE, config.temperature());
-        putIfNotNull(props, qp + PROP_TOP_P, config.topP());
-        putIfNotNull(props, qp + PROP_MAX_TOKENS, config.maxTokens());
-        addLoggingProperties(props, qp, config);
-
-        return props;
-    }
-
-    private static void addLoggingProperties(Map<String, String> props, String qp, AgentConfig config) {
-        putIfNotNull(props, qp + "log-requests", config.logRequests());
-        putIfNotNull(props, qp + "log-responses", config.logResponses());
-    }
-
-    private static String quarkusPrefix(String provider) {
-        // Each model kind maps to a separate Quarkus provider namespace
-        // (e.g., quarkus.langchain4j.ollama.*, quarkus.langchain4j.openai.*),
-        // so the default (non-named) config is used. Quarkus named configs
-        // would only be needed for multiple agents with the same model kind,
-        // which is not yet supported.
-        return "quarkus.langchain4j." + provider + ".";
     }
 
     private static void putIfNotNull(Map<String, String> props, String key, Object value) {

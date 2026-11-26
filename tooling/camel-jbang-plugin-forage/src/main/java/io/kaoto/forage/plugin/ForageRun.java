@@ -1,8 +1,7 @@
 package io.kaoto.forage.plugin;
 
-import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
+import org.aesh.command.option.Mixin;
 import org.apache.camel.dsl.jbang.core.commands.Run;
-import picocli.CommandLine;
 
 /**
  * Forage run command with property validation.
@@ -19,12 +18,8 @@ import picocli.CommandLine;
  */
 public class ForageRun extends Run {
 
-    @CommandLine.Mixin
-    private PropertyValidationMixin validation;
-
-    public ForageRun(CamelJBangMain main) {
-        super(main);
-    }
+    @Mixin
+    PropertyValidationMixin validation = new PropertyValidationMixin();
 
     @Override
     public Integer doCall() throws Exception {

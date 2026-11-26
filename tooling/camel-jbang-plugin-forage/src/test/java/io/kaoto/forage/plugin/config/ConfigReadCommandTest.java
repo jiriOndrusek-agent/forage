@@ -3,7 +3,7 @@ package io.kaoto.forage.plugin.config;
 import java.io.File;
 import java.io.FileWriter;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
-import org.apache.camel.dsl.jbang.core.common.StringPrinter;
+import org.apache.camel.dsl.jbang.run.common.StringPrinter;
 import io.kaoto.forage.config.editor.PropertiesFileStrategyType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -67,7 +67,7 @@ class ConfigReadCommandTest {
         }
 
         // Create and execute the command - following Camel JBang test pattern
-        ConfigReadCommand command = new ConfigReadCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigReadCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigReadCommand());
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
 
@@ -250,7 +250,7 @@ class ConfigReadCommandTest {
         }
 
         // Create and execute the command with filter
-        ConfigReadCommand command = new ConfigReadCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigReadCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigReadCommand());
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
         setField(command, "filter", "jdbc");
@@ -333,7 +333,7 @@ class ConfigReadCommandTest {
             writer.write(propertiesContent);
         }
 
-        ConfigReadCommand command = new ConfigReadCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigReadCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigReadCommand());
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
 
@@ -376,7 +376,7 @@ class ConfigReadCommandTest {
             writer.write(propertiesContent);
         }
 
-        ConfigReadCommand command = new ConfigReadCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigReadCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigReadCommand());
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
 
@@ -431,7 +431,7 @@ class ConfigReadCommandTest {
             writer.write(propertiesContent);
         }
 
-        ConfigReadCommand command = new ConfigReadCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigReadCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigReadCommand());
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
 
@@ -456,7 +456,7 @@ class ConfigReadCommandTest {
     @Test
     void testReadConfigWithNoPropertiesFiles() throws Exception {
         // Create an empty temp directory (no properties files)
-        ConfigReadCommand command = new ConfigReadCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigReadCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigReadCommand());
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
 

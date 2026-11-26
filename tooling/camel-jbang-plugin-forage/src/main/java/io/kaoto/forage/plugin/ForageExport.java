@@ -1,8 +1,7 @@
 package io.kaoto.forage.plugin;
 
-import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
+import org.aesh.command.option.Mixin;
 import org.apache.camel.dsl.jbang.core.commands.Export;
-import picocli.CommandLine;
 
 /**
  * Forage export command with property validation.
@@ -14,12 +13,8 @@ import picocli.CommandLine;
  */
 public class ForageExport extends Export {
 
-    @CommandLine.Mixin
-    private PropertyValidationMixin validation;
-
-    public ForageExport(CamelJBangMain main) {
-        super(main);
-    }
+    @Mixin
+    private PropertyValidationMixin validation = new PropertyValidationMixin();
 
     @Override
     public Integer doCall() throws Exception {

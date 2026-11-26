@@ -6,6 +6,7 @@ import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
@@ -29,6 +30,22 @@ public class CatalogDrivenExportCustomizer implements ExportCustomizer {
 
     private Map<String, Map<String, List<String>>> scannedProperties;
     private Boolean enabled;
+    private Set<String> quarkusModules = Set.of();
+    private Set<String> removedDependencies = Set.of();
+    private Set<String> addedDependencies = Set.of();
+
+    /** The modules exported as quarkus.* configuration: their Forage artifacts are not added. */
+    CatalogDrivenExportCustomizer quarkusModules(Set<String> modules) {
+        this.quarkusModules = modules;
+        return this;
+    }
+
+    /** Bean artifacts replaced by Quarkus artifacts in the Quarkus export (catalog GAVs). */
+    CatalogDrivenExportCustomizer quarkusDependencies(Set<String> removed, Set<String> added) {
+        this.removedDependencies = removed;
+        this.addedDependencies = added;
+        return this;
+    }
 
     @Override
     public boolean isEnabled() {
@@ -40,7 +57,7 @@ public class CatalogDrivenExportCustomizer implements ExportCustomizer {
 
     @Override
     public Set<String> resolveRuntimeDependencies(RuntimeType runtime) {
-        Set<String> dependencies = new LinkedHashSet<>();
+        Set<String> all = new LinkedHashSet<>();
         ForageCatalogReader catalog = ForageCatalogReader.getInstance();
         Map<String, Map<String, List<String>>> properties = getScannedProperties();
 
@@ -48,6 +65,7 @@ public class CatalogDrivenExportCustomizer implements ExportCustomizer {
 
         for (String factoryTypeKey : properties.keySet()) {
             Map<String, List<String>> factoryProperties = properties.get(factoryTypeKey);
+            Set<String> dependencies = new LinkedHashSet<>();
 
             // 1. Add the factory variant GAV (or fall back to base if variant doesn't exist)
             var variantGav = catalog.getFactoryVariantGav(factoryTypeKey, variantName);
@@ -81,8 +99,9 @@ public class CatalogDrivenExportCustomizer implements ExportCustomizer {
                                     beanKinds = Set.of(entry.getDefaultValue());
                                 }
                                 for (String kind : beanKinds) {
-                                    // Add bean GAVs
-                                    Collection<String> beanGavs = catalog.getBeanGavs(kind);
+                                    // Add the bean GAV of the selected feature: bean names are unique per
+                                    // feature only (the agent ollama chat model and embeddings model)
+                                    Collection<String> beanGavs = beanGavs(catalog, factoryTypeKey, entry, kind);
                                     beanGavs.stream()
                                             .map(CatalogDrivenExportCustomizer::toMvnGav)
                                             .forEach(dependencies::add);
@@ -118,12 +137,32 @@ public class CatalogDrivenExportCustomizer implements ExportCustomizer {
                             .forEach(dependencies::add);
                 }
             }
+
+            if (quarkusModules.contains(factoryTypeKey)) {
+                dependencies.removeIf(dependency -> dependency.startsWith("mvn:io.kaoto.forage:"));
+            }
+            all.addAll(dependencies);
         }
+        removedDependencies.stream()
+                .map(CatalogDrivenExportCustomizer::toMvnGav)
+                .forEach(all::remove);
+        addedDependencies.stream().map(CatalogDrivenExportCustomizer::toMvnGav).forEach(all::add);
 
-        LOG.debug("Resolved {} dependencies for runtime {}", dependencies.size(), runtime);
-        dependencies.forEach(dep -> LOG.debug("  Dependency: {}", dep));
+        LOG.debug("Resolved {} dependencies for runtime {}", all.size(), runtime);
+        all.forEach(dep -> LOG.debug("  Dependency: {}", dep));
 
-        return dependencies;
+        return all;
+    }
+
+    static Collection<String> beanGavs(
+            ForageCatalogReader catalog, String factoryTypeKey, ConfigEntry entry, String kind) {
+        if (entry.getSelectsFrom() != null) {
+            Optional<String> gav = catalog.getFeatureBeanGav(factoryTypeKey, entry.getSelectsFrom(), kind);
+            if (gav.isPresent()) {
+                return List.of(gav.get());
+            }
+        }
+        return catalog.getBeanGavs(kind);
     }
 
     private static void addConfiguredBeanDependencies(

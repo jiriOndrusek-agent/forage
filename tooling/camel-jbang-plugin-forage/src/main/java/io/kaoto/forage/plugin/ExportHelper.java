@@ -1,6 +1,7 @@
 package io.kaoto.forage.plugin;
 
 import java.io.InputStream;
+import java.util.Set;
 import java.util.stream.Stream;
 import io.kaoto.forage.core.common.ExportCustomizer;
 
@@ -24,7 +25,19 @@ public final class ExportHelper {
     }
 
     public static Stream<ExportCustomizer> getAllCustomizers() {
-        return Stream.of(new CatalogDrivenExportCustomizer());
+        return getAllCustomizers(Set.of(), Set.of(), Set.of());
+    }
+
+    /**
+     * @param quarkusModules the modules exported as quarkus.* configuration
+     * @param removed bean artifacts replaced by Quarkus artifacts (catalog GAVs)
+     * @param added the replacing Quarkus artifacts (catalog GAVs)
+     */
+    public static Stream<ExportCustomizer> getAllCustomizers(
+            Set<String> quarkusModules, Set<String> removed, Set<String> added) {
+        return Stream.of(new CatalogDrivenExportCustomizer()
+                .quarkusModules(quarkusModules)
+                .quarkusDependencies(removed, added));
     }
 
     /**

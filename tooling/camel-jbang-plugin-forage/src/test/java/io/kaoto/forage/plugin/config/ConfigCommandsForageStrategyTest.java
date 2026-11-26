@@ -5,7 +5,7 @@ import java.nio.file.Files;
 import java.util.Properties;
 import org.apache.camel.dsl.jbang.core.commands.CamelCommand;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
-import org.apache.camel.dsl.jbang.core.common.StringPrinter;
+import org.apache.camel.dsl.jbang.run.common.StringPrinter;
 import io.kaoto.forage.catalog.reader.ForageCatalogReader;
 import io.kaoto.forage.config.editor.PropertiesFileStrategyType;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -129,7 +129,7 @@ class ConfigCommandsForageStrategyTest {
         assertThat(readResult.json().get("success").asBoolean()).isFalse();
         assertThat(readResult.json().get("error").asText()).contains("Unknown properties file strategy 'app'");
 
-        ConfigWriteCommand write = new ConfigWriteCommand(main());
+        ConfigWriteCommand write = main().command(new ConfigWriteCommand());
         setField(write, "input", PG_JSON.formatted("myPG"));
         Result writeResult = run(write, "forge");
         assertThat(writeResult.exitCode()).isEqualTo(1);
@@ -346,7 +346,7 @@ class ConfigCommandsForageStrategyTest {
     @Test
     void rejectedWriteDoesNotCreateTheDirectory() throws Exception {
         File missingDir = new File(tempDir, "missing");
-        ConfigWriteCommand command = new ConfigWriteCommand(main());
+        ConfigWriteCommand command = main().command(new ConfigWriteCommand());
         setField(command, "input", "{\"forage.tavily.api.key\": \"secret\"}");
         setField(command, "directory", missingDir);
         setStrategy(command, PropertiesFileStrategyType.FORAGE);
@@ -417,7 +417,7 @@ class ConfigCommandsForageStrategyTest {
     @Test
     void deleteInMissingDirectoryReportsNoConfiguration() throws Exception {
         for (PropertiesFileStrategyType type : PropertiesFileStrategyType.values()) {
-            ConfigWriteCommand command = new ConfigWriteCommand(main());
+            ConfigWriteCommand command = main().command(new ConfigWriteCommand());
             setField(command, "delete", true);
             setField(command, "instanceName", "x");
             setField(command, "directory", new File(tempDir, "missing"));
@@ -507,17 +507,17 @@ class ConfigCommandsForageStrategyTest {
     }
 
     private Result write(PropertiesFileStrategyType type, String json) throws Exception {
-        ConfigWriteCommand command = new ConfigWriteCommand(main());
+        ConfigWriteCommand command = main().command(new ConfigWriteCommand());
         setField(command, "input", json);
         return run(command, type.id());
     }
 
     private Result read(String strategy) throws Exception {
-        return run(new ConfigReadCommand(main()), strategy);
+        return run(main().command(new ConfigReadCommand()), strategy);
     }
 
     private Result delete(String name, PropertiesFileStrategyType type) throws Exception {
-        ConfigWriteCommand command = new ConfigWriteCommand(main());
+        ConfigWriteCommand command = main().command(new ConfigWriteCommand());
         setField(command, "delete", true);
         setField(command, "instanceName", name);
         return run(command, type.id());

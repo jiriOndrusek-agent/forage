@@ -184,6 +184,12 @@ public class CodeScanner {
                         log.info("Found Config: " + className + " -> " + configName);
                     }
                 }
+
+                // 5. Check if class implements ForageModuleDescriptor
+                if (classDecl.getImplementedTypes().stream()
+                        .anyMatch(impl -> "ForageModuleDescriptor".equals(impl.getNameAsString()))) {
+                    result.getModuleDescriptors().add(getFullyQualifiedClassName(classDecl, cu));
+                }
             });
 
         } catch (Exception e) {
