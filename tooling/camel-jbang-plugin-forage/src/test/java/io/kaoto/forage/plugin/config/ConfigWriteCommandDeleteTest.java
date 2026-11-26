@@ -4,7 +4,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.util.Properties;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
-import org.apache.camel.dsl.jbang.core.common.StringPrinter;
+import org.apache.camel.dsl.jbang.run.common.StringPrinter;
 import io.kaoto.forage.config.editor.PropertiesFileStrategyType;
 import io.kaoto.forage.core.common.VersionHelper;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -59,7 +59,7 @@ class ConfigWriteCommandDeleteTest {
         Files.writeString(propsFile.toPath(), existingContent);
 
         // Execute delete command
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
         setField(command, "delete", true);
@@ -125,7 +125,7 @@ class ConfigWriteCommandDeleteTest {
         Files.writeString(propsFile.toPath(), existingContent);
 
         // Execute delete command for PostgreSQL only
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
         setField(command, "delete", true);
@@ -186,7 +186,7 @@ class ConfigWriteCommandDeleteTest {
         Files.writeString(propsFile.toPath(), existingContent);
 
         // Execute delete command
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
         setField(command, "delete", true);
@@ -258,7 +258,7 @@ class ConfigWriteCommandDeleteTest {
         Files.writeString(propsFile.toPath(), existingContent);
 
         // Execute delete command for PostgreSQL
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
         setField(command, "delete", true);
@@ -310,7 +310,7 @@ class ConfigWriteCommandDeleteTest {
         Files.writeString(propsFile.toPath(), existingContent);
 
         // Execute delete command
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
         setField(command, "delete", true);
@@ -342,7 +342,7 @@ class ConfigWriteCommandDeleteTest {
         Files.writeString(propsFile.toPath(), existingContent);
 
         // Execute delete command for non-existent instance
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
         setField(command, "delete", true);
@@ -372,7 +372,7 @@ class ConfigWriteCommandDeleteTest {
         Files.writeString(propsFile.toPath(), "forage.myPG.jdbc.url=test");
 
         // Execute delete command without instance name
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
         setField(command, "delete", true);
@@ -394,7 +394,7 @@ class ConfigWriteCommandDeleteTest {
         // No properties file exists in tempDir
 
         // Execute delete command
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
         setField(command, "delete", true);

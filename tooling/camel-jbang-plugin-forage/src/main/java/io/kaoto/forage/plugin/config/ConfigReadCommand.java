@@ -7,7 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
+import org.aesh.command.CommandDefinition;
+import org.aesh.command.option.Option;
 import io.kaoto.forage.catalog.model.ConditionalBeanGroup;
 import io.kaoto.forage.catalog.model.ConditionalBeanInfo;
 import io.kaoto.forage.catalog.model.ConfigEntry;
@@ -16,31 +17,31 @@ import io.kaoto.forage.config.editor.ForageConfiguration;
 import io.kaoto.forage.config.editor.ForagePropertyParser;
 import io.kaoto.forage.config.editor.ForagePropertyParser.ParsedProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import picocli.CommandLine;
 
 /**
  * Command to read Forage configuration properties and generate a JSON list of beans
  * that would be created at runtime. This command supports the Kaoto VSCode extension
  * by providing a machine-readable view of configured beans.
  */
-@CommandLine.Command(name = "read", description = "Read Forage configuration and list beans that would be created")
+@CommandDefinition(
+        name = "read",
+        description = "Read Forage configuration and list beans that would be created",
+        generateHelp = true)
 public class ConfigReadCommand extends AbstractConfigCommand {
 
     private static final String FORAGE_PROPERTIES_PREFIX = "forage.";
 
-    @CommandLine.Option(
-            names = {"--dir", "-d"},
+    @Option(
+            name = "dir",
+            shortName = 'd',
             description = "Directory to scan for properties files. Defaults to current directory.")
     private File directory;
 
-    @CommandLine.Option(
-            names = {"--filter", "-f"},
+    @Option(
+            name = "filter",
+            shortName = 'f',
             description = "Filter by factory type (e.g., 'jdbc', 'jms', 'agent'). If not specified, shows all.")
     private String filter;
-
-    public ConfigReadCommand(CamelJBangMain main) {
-        super(main);
-    }
 
     @Override
     public Integer doCall() throws Exception {

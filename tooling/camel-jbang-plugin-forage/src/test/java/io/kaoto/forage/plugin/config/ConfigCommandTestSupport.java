@@ -18,7 +18,7 @@ final class ConfigCommandTestSupport {
     }
 
     /**
-     * Sets the raw {@code --strategy} value of a {@code config} command, as picocli would.
+     * Sets the raw {@code --strategy} value of a {@code config} command, as the parser would.
      */
     static void setStrategy(Object command, String strategy) throws Exception {
         strategyOption(command).strategy = strategy;

@@ -7,13 +7,15 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
+import org.aesh.command.metadata.MetadataProviderRegistry;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
 import org.apache.camel.dsl.jbang.core.common.CamelJBangPlugin;
 import org.apache.camel.dsl.jbang.core.common.CommandLineHelper;
+import org.apache.camel.dsl.jbang.core.common.CommandTree;
 import org.apache.camel.dsl.jbang.core.common.Plugin;
-import org.apache.camel.dsl.jbang.core.common.PluginExporter;
-import org.apache.camel.dsl.jbang.core.common.PluginRunCustomizer;
-import org.apache.camel.dsl.jbang.core.common.Printer;
+import org.apache.camel.dsl.jbang.run.common.PluginExporter;
+import org.apache.camel.dsl.jbang.run.common.PluginRunCustomizer;
+import org.apache.camel.dsl.jbang.run.common.Printer;
 import org.apache.camel.main.KameletMain;
 import org.apache.camel.util.FileUtil;
 import org.slf4j.Logger;
@@ -23,7 +25,6 @@ import io.kaoto.forage.core.common.RuntimeType;
 import io.kaoto.forage.plugin.config.ConfigCommand;
 import io.kaoto.forage.plugin.config.ConfigReadCommand;
 import io.kaoto.forage.plugin.config.ConfigWriteCommand;
-import picocli.CommandLine;
 
 @CamelJBangPlugin(name = "camel-jbang-plugin-forage", firstVersion = "4.16.0")
 public class ForagePlugin implements Plugin {
@@ -37,17 +38,21 @@ public class ForagePlugin implements Plugin {
     static final String FRESH_RUN = "forage.quarkus.translation.fresh";
 
     @Override
-    public void customize(CommandLine commandLine, CamelJBangMain main) {
+    public void customize(CommandTree commandLine, CamelJBangMain main) {
+        MetadataProviderRegistry.register(ForageRunMetadata.REGISTRY);
         commandLine.addSubcommand(
                 "forage",
-                new CommandLine(new ForageCommand(main))
+                new CommandTree(main.command(new ForageCommand()))
                         .addSubcommand(
                                 "config",
-                                new CommandLine(new ConfigCommand(main))
-                                        .addSubcommand("read", new CommandLine(new ConfigReadCommand(main)))
-                                        .addSubcommand("write", new CommandLine(new ConfigWriteCommand(main))))
-                        .addSubcommand("run", new CommandLine(new ForageRun(main)))
-                        .addSubcommand("export", new ForageExport(main)));
+                                new CommandTree(main.command(new ConfigCommand()))
+                                        .addSubcommand(
+                                                "read", CommandTree.lazy(() -> main.command(new ConfigReadCommand())))
+                                        .addSubcommand(
+                                                "write",
+                                                CommandTree.lazy(() -> main.command(new ConfigWriteCommand()))))
+                        .addSubcommand("run", CommandTree.lazy(() -> main.command(new ForageRun())))
+                        .addSubcommand("export", CommandTree.lazy(() -> main.command(new ForageExport()))));
     }
 
     @Override
@@ -62,9 +67,10 @@ public class ForagePlugin implements Plugin {
     public Optional<PluginExporter> getExporter() {
         return Optional.of(new PluginExporter() {
             @Override
-            public Set<String> getDependencies(org.apache.camel.dsl.jbang.core.common.RuntimeType runtimeType) {
+            public Set<String> getDependencies(org.apache.camel.dsl.jbang.run.common.RuntimeType runtimeType) {
                 return dependencies(
-                        RuntimeType.fromValue(runtimeType.name()),
+                        // camel run uses the jbang runtime, which is exported as main
+                        RuntimeType.fromValue(runtimeType.exportRuntime().name()),
                         CommandLineHelper.getWorkDir().resolve("work/src/main/resources"));
             }
 
@@ -151,7 +157,7 @@ public class ForagePlugin implements Plugin {
      *
      * <p>{@link PluginRunCustomizer#beforeRun} returns {@code void} and Camel JBang's {@code Run}
      * invokes it outside any try/catch, so in strict mode the only way to abort the run is to
-     * throw. The exception propagates to picocli's execution exception handler, which prints it
+     * throw. The exception propagates to the execution exception handler of the CLI, which prints it
      * and exits with a non-zero code.
      */
     private static void validateProperties() {

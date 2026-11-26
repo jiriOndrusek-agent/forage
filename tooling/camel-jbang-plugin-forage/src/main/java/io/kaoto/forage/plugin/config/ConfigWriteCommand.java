@@ -10,7 +10,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
+import org.aesh.command.CommandDefinition;
+import org.aesh.command.option.Option;
 import io.kaoto.forage.catalog.reader.ForageCatalogReader;
 import io.kaoto.forage.config.editor.ForageConfigurationEditor;
 import io.kaoto.forage.config.editor.ForageConfigurationEditor.ConfigurationEditException;
@@ -20,41 +21,37 @@ import io.kaoto.forage.config.editor.ForagePropertyParser;
 import io.kaoto.forage.config.editor.ForagePropertyParser.ParsedProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
-import picocli.CommandLine;
 
 /**
  * Command to write Forage configuration properties from JSON input.
  * This command creates, updates, or merges properties files based on JSON input from the Kaoto wizard.
  */
-@CommandLine.Command(name = "write", description = "Write Forage configuration from JSON input to properties files")
+@CommandDefinition(
+        name = "write",
+        description = "Write Forage configuration from JSON input to properties files",
+        generateHelp = true)
 public class ConfigWriteCommand extends AbstractConfigCommand {
 
     private static final String KEY_SUCCESS = "success";
     private static final String FORAGE_PREFIX = "forage.";
 
-    @CommandLine.Option(
-            names = {"--input", "-i"},
+    @Option(
+            name = "input",
+            shortName = 'i',
             description = "JSON input string containing configuration values. If not provided, reads from stdin.")
     private String input;
 
-    @CommandLine.Option(
-            names = {"--dir", "-d"},
+    @Option(
+            name = "dir",
+            shortName = 'd',
             description = "Directory where properties files will be written. Defaults to current directory.")
     private File directory;
 
-    @CommandLine.Option(
-            names = {"--delete"},
-            description = "Delete configuration for a specific instance name.")
+    @Option(name = "delete", hasValue = false, description = "Delete configuration for a specific instance name.")
     private boolean delete;
 
-    @CommandLine.Option(
-            names = {"--name", "-n"},
-            description = "Instance name to delete (used with --delete).")
+    @Option(name = "name", shortName = 'n', description = "Instance name to delete (used with --delete).")
     private String instanceName;
-
-    public ConfigWriteCommand(CamelJBangMain main) {
-        super(main);
-    }
 
     @Override
     public Integer doCall() throws Exception {

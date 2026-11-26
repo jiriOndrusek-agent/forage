@@ -1,9 +1,9 @@
 package io.kaoto.forage.plugin.config;
 
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
+import org.apache.camel.dsl.jbang.core.common.CommandTree;
 import io.kaoto.forage.catalog.reader.ForageCatalogReader;
 import io.kaoto.forage.config.editor.PropertiesFileStrategyType;
-import picocli.CommandLine;
 
 import static io.kaoto.forage.plugin.config.ConfigCommandTestSupport.getStrategy;
 
@@ -20,25 +20,25 @@ class PropertiesFileStrategyOptionTest {
 
     @Test
     void optionDefaultsToApplication() throws Exception {
-        ConfigReadCommand command = new ConfigReadCommand(new CamelJBangMain());
-        new CommandLine(command).parseArgs();
+        ConfigReadCommand command = new CamelJBangMain().command(new ConfigReadCommand());
+        new CommandTree(command).parse();
         assertThat(getStrategy(command)).isEqualTo("application");
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"forage", "Forage", "FORAGE"})
     void optionAcceptsAnyCase(String value) throws Exception {
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain());
-        new CommandLine(command).parseArgs("--strategy", value);
+        ConfigWriteCommand command = new CamelJBangMain().command(new ConfigWriteCommand());
+        new CommandTree(command).parse("--strategy", value);
         assertThat(PropertiesFileStrategyType.fromId(getStrategy(command)))
                 .isEqualTo(PropertiesFileStrategyType.FORAGE);
     }
 
     @Test
     void optionDefersValidationToTheCommand() throws Exception {
-        // picocli accepts any value so that the command can report it as a JSON error
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain());
-        new CommandLine(command).parseArgs("-s", "app");
+        // the parser accepts any value so that the command can report it as a JSON error
+        ConfigWriteCommand command = new CamelJBangMain().command(new ConfigWriteCommand());
+        new CommandTree(command).parse("-s", "app");
         assertThat(getStrategy(command)).isEqualTo("app");
 
         PropertiesFileStrategyOption option = new PropertiesFileStrategyOption();

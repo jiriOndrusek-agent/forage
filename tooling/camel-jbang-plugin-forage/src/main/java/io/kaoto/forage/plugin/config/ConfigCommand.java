@@ -1,19 +1,13 @@
 package io.kaoto.forage.plugin.config;
 
+import org.aesh.command.CommandDefinition;
 import org.apache.camel.dsl.jbang.core.commands.CamelCommand;
-import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
-import picocli.CommandLine;
 
-@CommandLine.Command(name = "config", description = "Forage configuration management commands")
+@CommandDefinition(name = "config", description = "Forage configuration management commands", generateHelp = true)
 public class ConfigCommand extends CamelCommand {
-
-    public ConfigCommand(CamelJBangMain main) {
-        super(main);
-    }
 
     @Override
     public Integer doCall() {
-        new CommandLine(this).execute("--help");
-        return 0;
+        return printHelp();
     }
 }
