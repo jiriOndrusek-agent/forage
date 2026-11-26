@@ -9,8 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
-import org.apache.camel.dsl.jbang.core.common.Printer;
+import org.apache.camel.dsl.jbang.run.common.Printer;
 import org.apache.commons.text.similarity.LevenshteinDistance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,11 +40,10 @@ public final class ForagePropertyValidator {
      * Set when a Forage command ({@code camel forage run}/{@code camel forage export}) has already
      * validated properties with the user's {@code --skip-validation}/{@code --strict} flags, so the
      * plugin's {@code beforeRun} hook (triggered by the delegated {@code camel run}) must not
-     * validate — and print warnings — a second time. The commands and the plugin live in the same
-     * module/classloader and run in the same JVM, so a static flag is sufficient and avoids leaking
-     * internal state into the user-visible system property space.
+     * validate — and print warnings — a second time. A system property: Camel JBang loads the plugin
+     * of the command and the plugin of the {@code beforeRun} hook in different class loaders.
      */
-    private static final AtomicBoolean VALIDATION_HANDLED = new AtomicBoolean(false);
+    private static final String VALIDATION_HANDLED = "forage.validation.handled";
 
     private ForagePropertyValidator() {}
 
@@ -54,7 +52,7 @@ public final class ForagePropertyValidator {
      * {@code beforeRun} hook skips its own validation for the current run.
      */
     public static void markValidationHandled() {
-        VALIDATION_HANDLED.set(true);
+        System.setProperty(VALIDATION_HANDLED, "true");
     }
 
     /**
@@ -62,7 +60,7 @@ public final class ForagePropertyValidator {
      * reused in the same JVM starts the next run with a clean state.
      */
     public static boolean consumeValidationHandled() {
-        return VALIDATION_HANDLED.getAndSet(false);
+        return System.clearProperty(VALIDATION_HANDLED) != null;
     }
 
     /**

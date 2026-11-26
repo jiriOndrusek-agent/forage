@@ -126,6 +126,8 @@ Export your project to Spring Boot or Quarkus with all Forage dependencies inclu
     camel export --runtime=quarkus --directory=./my-app
     ```
 
+On Quarkus, plain JDBC datasources and the default Artemis connection factory are also written as `quarkus.*` keys, and their Forage artifacts are left out. The default agent's chat model uses the quarkus-langchain4j extension instead of the Forage model artifact. See the [migration guide](migration.md#upgrading-to-163) for details and the off switch.
+
 ## Testing Connections
 
 Verify datasource connectivity without starting routes:

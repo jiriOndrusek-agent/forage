@@ -3,13 +3,12 @@ package io.kaoto.forage.plugin.config;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import org.aesh.command.option.Mixin;
 import org.apache.camel.dsl.jbang.core.commands.CamelCommand;
-import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
 import io.kaoto.forage.catalog.reader.ForageCatalogReader;
 import io.kaoto.forage.config.editor.PropertiesFileStrategy;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import picocli.CommandLine;
 
 /**
  * Base class for the {@code config} commands: shares the {@code --strategy} option, the catalog and strategy
@@ -19,16 +18,12 @@ abstract class AbstractConfigCommand extends CamelCommand {
 
     protected static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    @CommandLine.Mixin
+    @Mixin
     private PropertiesFileStrategyOption strategyOption = new PropertiesFileStrategyOption();
 
     protected ForageCatalogReader catalog;
 
     protected PropertiesFileStrategy strategy;
-
-    protected AbstractConfigCommand(CamelJBangMain main) {
-        super(main);
-    }
 
     /**
      * Loads the catalog and resolves the strategy selected with {@code --strategy}.

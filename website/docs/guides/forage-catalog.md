@@ -160,6 +160,11 @@ Config entries define the properties a user can set. Each entry carries enough m
 | `selectsFrom` | For `bean-name` type -- the feature name whose beans populate the dropdown |
 | `hidden` | `true` for internal entries (infrastructure overrides) that a UI should not render; omitted otherwise |
 | `multiValue` | `true` when the value can list several entries, comma-separated -- for a `bean-name` entry, several beans (e.g., `forage.route.policy.{routeId}.name=schedule,flip`). Present only when `true`: any other selector takes exactly one bean name |
+| `quarkusProperty` | The native Quarkus key `camel export --runtime=quarkus` writes for this entry (`{name}`: quoted configuration name; ending with `.`: a map). From the module descriptor's `quarkusProperties()`. Present only for entries with a plain Quarkus equivalent |
+| `quarkusUnit` | Unit appended to the Quarkus value (`S`, `M`). Present only when there is one |
+| `quarkusIgnored` | `true`: the entry has no effect on Quarkus, so `camel export --runtime=quarkus` leaves it untranslated (with a note). From the module descriptor's `quarkusIgnoredProperties()`. Present only when `true` |
+| `quarkusHandled` | `true`: the entry has no Quarkus key of its own, but the export handles it (e.g. `forage.jms.pool.enabled`, a catalog condition). From the module descriptor's `quarkusHandledProperties()`. Present only when `true` |
+| `quarkusSelector` | On the entry selecting the bean (e.g. `forage.jdbc.db.kind`): the selected bean needs Quarkus runtime dependencies in the catalog. `kinds`: the kinds translated, each with the Quarkus keys it adds (absent: any kind). `defaultOnly`: named configurations are not translated. `properties`: per kind, the Quarkus key of each Forage key (e.g. the agent's chat model keys). `dependencies`: per kind, the Quarkus artifacts that replace the selected bean's artifact; the module then keeps its Forage runtime and its other keys stay `forage.*`. From the module descriptor's `quarkusSelector()` |
 
 **Supported types:**
 

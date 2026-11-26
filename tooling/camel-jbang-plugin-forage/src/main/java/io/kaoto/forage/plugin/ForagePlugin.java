@@ -2,16 +2,22 @@ package io.kaoto.forage.plugin;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import org.aesh.command.metadata.MetadataProviderRegistry;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
 import org.apache.camel.dsl.jbang.core.common.CamelJBangPlugin;
+import org.apache.camel.dsl.jbang.core.common.CommandLineHelper;
+import org.apache.camel.dsl.jbang.core.common.CommandTree;
 import org.apache.camel.dsl.jbang.core.common.Plugin;
-import org.apache.camel.dsl.jbang.core.common.PluginExporter;
-import org.apache.camel.dsl.jbang.core.common.PluginRunCustomizer;
-import org.apache.camel.dsl.jbang.core.common.Printer;
+import org.apache.camel.dsl.jbang.run.common.PluginExporter;
+import org.apache.camel.dsl.jbang.run.common.PluginRunCustomizer;
+import org.apache.camel.dsl.jbang.run.common.Printer;
 import org.apache.camel.main.KameletMain;
 import org.apache.camel.util.FileUtil;
 import org.slf4j.Logger;
@@ -21,25 +27,34 @@ import io.kaoto.forage.core.common.RuntimeType;
 import io.kaoto.forage.plugin.config.ConfigCommand;
 import io.kaoto.forage.plugin.config.ConfigReadCommand;
 import io.kaoto.forage.plugin.config.ConfigWriteCommand;
-import picocli.CommandLine;
 
 @CamelJBangPlugin(name = "camel-jbang-plugin-forage", firstVersion = "4.16.0")
 public class ForagePlugin implements Plugin {
 
     private static final Logger LOG = LoggerFactory.getLogger(ForagePlugin.class);
 
+    /** Set by a run, taken by its own getDependencies call. */
+    private static final AtomicBoolean RUN_STARTED = new AtomicBoolean();
+
+    /** Set in this JVM by a run: an export without it reuses earlier run data. */
+    static final String FRESH_RUN = "forage.quarkus.translation.fresh";
+
     @Override
-    public void customize(CommandLine commandLine, CamelJBangMain main) {
+    public void customize(CommandTree commandLine, CamelJBangMain main) {
+        MetadataProviderRegistry.register(ForageRunMetadata.REGISTRY);
         commandLine.addSubcommand(
                 "forage",
-                new CommandLine(new ForageCommand(main))
+                new CommandTree(main.command(new ForageCommand()))
                         .addSubcommand(
                                 "config",
-                                new CommandLine(new ConfigCommand(main))
-                                        .addSubcommand("read", new CommandLine(new ConfigReadCommand(main)))
-                                        .addSubcommand("write", new CommandLine(new ConfigWriteCommand(main))))
-                        .addSubcommand("run", new CommandLine(new ForageRun(main)))
-                        .addSubcommand("export", new ForageExport(main)));
+                                new CommandTree(main.command(new ConfigCommand()))
+                                        .addSubcommand(
+                                                "read", CommandTree.lazy(() -> main.command(new ConfigReadCommand())))
+                                        .addSubcommand(
+                                                "write",
+                                                CommandTree.lazy(() -> main.command(new ConfigWriteCommand()))))
+                        .addSubcommand("run", CommandTree.lazy(() -> main.command(new ForageRun())))
+                        .addSubcommand("export", CommandTree.lazy(() -> main.command(new ForageExport()))));
     }
 
     @Override
@@ -52,31 +67,108 @@ public class ForagePlugin implements Plugin {
      */
     @Override
     public Optional<PluginExporter> getExporter() {
-        return Optional.of(new PluginExporter() {
-            @Override
-            public Set<String> getDependencies(org.apache.camel.dsl.jbang.core.common.RuntimeType runtimeType) {
-                // gather dependencies across all (enabled) export customizers for the specific runtime
-                return ExportHelper.getAllCustomizers()
-                        .filter(ExportCustomizer::isEnabled)
-                        .map(exportCustomizer ->
-                                exportCustomizer.resolveRuntimeDependencies(RuntimeType.fromValue(runtimeType.name())))
-                        .flatMap(Set::stream)
-                        .collect(Collectors.toSet());
-            }
+        return Optional.of(new Exporter(() -> CommandLineHelper.getWorkDir().resolve("work/src/main/resources")));
+    }
 
-            @Override
-            public boolean contributeRuntimeDependencies() {
-                return true;
-            }
+    /** Adds the runtime dependencies of the Forage configuration; for a Quarkus export removes replaced artifacts. */
+    static final class Exporter implements PluginExporter {
 
-            @Override
-            public void addSourceFiles(Path buildDir, String packageName, Printer printer) {
-                // This exporter contributes only runtime dependencies, not source files.
-            }
-        });
+        private final Supplier<Path> exportedResources;
+        // the bean artifacts the Quarkus translation replaced; Camel JBang asks for them after getDependencies
+        private final Set<String> replaced = new HashSet<>();
+
+        Exporter(Supplier<Path> exportedResources) {
+            this.exportedResources = exportedResources;
+        }
+
+        @Override
+        public Set<String> getDependencies(org.apache.camel.dsl.jbang.run.common.RuntimeType runtimeType) {
+            replaced.clear();
+            return dependencies(
+                    // camel run uses the jbang runtime, which is exported as main
+                    RuntimeType.fromValue(runtimeType.exportRuntime().name()), exportedResources.get(), replaced);
+        }
+
+        /** The silent run of the export added the replaced artifacts too, as the run keeps the Forage runtime. */
+        @Override
+        public Set<String> getDependenciesToRemove(org.apache.camel.dsl.jbang.run.common.RuntimeType runtimeType) {
+            return Set.copyOf(replaced);
+        }
+
+        @Override
+        public boolean contributeRuntimeDependencies() {
+            return true;
+        }
+
+        @Override
+        public void addSourceFiles(Path buildDir, String packageName, Printer printer) {
+            // This exporter contributes only runtime dependencies, not source files.
+        }
+    }
+
+    static Set<String> dependencies(RuntimeType runtime, Path exportedResources) {
+        return dependencies(runtime, exportedResources, new HashSet<>());
+    }
+
+    /**
+     * @param replaced gets the groupId:artifactId of the bean artifacts that the Quarkus translation replaced: none
+     *     when a module stays forage.* (all or nothing)
+     */
+    static Set<String> dependencies(RuntimeType runtime, Path exportedResources, Set<String> replaced) {
+        // a run (also the silent run of an export) keeps the Forage runtime
+        boolean run = RUN_STARTED.getAndSet(false);
+        QuarkusExport.Result quarkus =
+                !run && runtime == RuntimeType.QUARKUS ? exportQuarkusConfig(exportedResources) : null;
+        if (quarkus != null) {
+            quarkus.removedDependencies().stream()
+                    .map(gav -> gav.substring(0, gav.indexOf(':', gav.indexOf(':') + 1)))
+                    .forEach(replaced::add);
+        }
+        // gather dependencies across all (enabled) export customizers for the specific runtime
+        return (quarkus == null
+                        ? ExportHelper.getAllCustomizers()
+                        : ExportHelper.getAllCustomizers(
+                                quarkus.modules(), quarkus.removedDependencies(), quarkus.addedDependencies()))
+                .filter(ExportCustomizer::isEnabled)
+                .map(exportCustomizer -> exportCustomizer.resolveRuntimeDependencies(runtime))
+                .flatMap(Set::stream)
+                .collect(Collectors.toSet());
+    }
+
+    /** Called when a Camel JBang run starts. */
+    static void runStarted() {
+        RUN_STARTED.set(true);
+        System.setProperty(FRESH_RUN, "true");
+    }
+
+    /**
+     * Writes the Forage configuration the catalog maps as quarkus.* keys into the exported resources, and returns the
+     * result, or {@code null} when nothing is translated. Camel JBang calls getDependencies after it wrote them.
+     */
+    private static QuarkusExport.Result exportQuarkusConfig(Path resources) {
+        if (booleanOverride("forage.quarkus.translation.skip", "FORAGE_QUARKUS_TRANSLATION_SKIP")) {
+            return null;
+        }
+        Printer printer = new Printer.SystemOutPrinter();
+        if (System.getProperty(FRESH_RUN) == null) {
+            printer.println(
+                    "Forage configuration stays as forage.* configuration: the export reuses earlier run data.");
+            return null;
+        }
+        try {
+            QuarkusExport.Result result = QuarkusExport.export(resources);
+            result.notes().forEach(printer::println);
+            return result;
+        } catch (Exception e) {
+            // never fail where the export without translation works; the message holds no values
+            printer.println("Forage configuration stays as forage.* configuration: "
+                    + e.getClass().getSimpleName());
+            return null;
+        }
     }
 
     private void beforeRun(KameletMain main, List<String> files) {
+        runStarted();
         resolveConfigDir(files);
         propagateProfile(main);
         addCatalogDrivenRepos(main);
@@ -98,7 +190,7 @@ public class ForagePlugin implements Plugin {
      *
      * <p>{@link PluginRunCustomizer#beforeRun} returns {@code void} and Camel JBang's {@code Run}
      * invokes it outside any try/catch, so in strict mode the only way to abort the run is to
-     * throw. The exception propagates to picocli's execution exception handler, which prints it
+     * throw. The exception propagates to the execution exception handler of the CLI, which prints it
      * and exits with a non-zero code.
      */
     private static void validateProperties() {
