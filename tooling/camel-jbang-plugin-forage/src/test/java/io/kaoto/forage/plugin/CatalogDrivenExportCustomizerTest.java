@@ -1,5 +1,6 @@
 package io.kaoto.forage.plugin;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.InputStream;
@@ -434,6 +435,89 @@ class CatalogDrivenExportCustomizerTest {
         assertThat(deps).anyMatch(d -> d.contains("forage-model-ollama:"));
         assertThat(deps).noneMatch(d -> d.contains("forage-in-memory-store:"));
         assertThat(deps).noneMatch(d -> d.contains("forage-default-retrieval-augmentor:"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(RuntimeType.class)
+    void testChatModelKind_hasNoEmbeddingsModel(RuntimeType runtime) throws Exception {
+        // model.kind selects a Chat Model bean: the Embeddings Model bean of the same name is not used
+        CatalogDrivenExportCustomizer customizer = createCustomizer("forage.agent.model.kind=ollama\n"
+                + "forage.agent.model.name=granite4:3b\n"
+                + "forage.agent.base.url=http://localhost:11434\n");
+
+        Set<String> deps = customizer.resolveRuntimeDependencies(runtime);
+        assertThat(deps).anyMatch(d -> d.contains("forage-model-ollama:"));
+        assertThat(deps).noneMatch(d -> d.contains("forage-model-embeddings-ollama:"));
+    }
+
+    @Test
+    void testOllamaEmbeddingsConfigured_hasEmbeddingsModel() throws Exception {
+        CatalogDrivenExportCustomizer customizer = createCustomizer("forage.agent.model.kind=ollama\n"
+                + "forage.agent.model.name=granite4:3b\n"
+                + "forage.ollama.embedding.model.name=granite-embedding:latest\n");
+
+        Set<String> deps = customizer.resolveRuntimeDependencies(RuntimeType.QUARKUS);
+        assertThat(deps).anyMatch(d -> d.contains("forage-model-embeddings-ollama:"));
+    }
+
+    @Test
+    void testInMemoryStoreFileSource_hasEmbeddingsModel() throws Exception {
+        // The agent creates its embedding model for the in-memory store file source alone
+        CatalogDrivenExportCustomizer customizer =
+                createCustomizer("forage.agent.in.memory.store.file.source=classpath:docs.txt\n");
+
+        Set<String> deps = customizer.resolveRuntimeDependencies(RuntimeType.QUARKUS);
+        assertThat(deps).anyMatch(d -> d.contains("forage-model-embeddings-ollama:"));
+    }
+
+    // Embeddings Model listed before Chat Model, so a lookup ignoring the feature finds the wrong bean
+    private static final String FEATURE_ORDER_CATALOG_JSON =
+            """
+            {
+              "factories": [
+                {
+                  "name": "Agent",
+                  "factoryType": "Agent",
+                  "configEntries": [
+                    { "name": "forage.agent.model.kind", "type": "bean-name", "selectsFrom": "Chat Model" }
+                  ],
+                  "beansByFeature": [
+                    { "feature": "Embeddings Model", "beans": [
+                      { "name": "ollama", "gav": "test:embeddings-ollama:1.0" },
+                      { "name": "other", "gav": "test:embeddings-other:1.0" }
+                    ] },
+                    { "feature": "Chat Model", "beans": [
+                      { "name": "ollama", "gav": "test:chat-ollama:1.0" }
+                    ] }
+                  ]
+                }
+              ]
+            }
+            """;
+
+    private static ConfigEntry modelKindEntry() {
+        ConfigEntry entry = new ConfigEntry("forage.agent.model.kind", "bean-name", "Model kind", false);
+        entry.setSelectsFrom("Chat Model");
+        return entry;
+    }
+
+    @Test
+    void testBeanGavs_usesSelectedFeature() throws Exception {
+        ForageCatalogReader catalog = ForageCatalogReader.fromInputStream(
+                new ByteArrayInputStream(FEATURE_ORDER_CATALOG_JSON.getBytes(StandardCharsets.UTF_8)));
+
+        assertThat(CatalogDrivenExportCustomizer.beanGavs(catalog, "agent", modelKindEntry(), "ollama"))
+                .containsExactly("test:chat-ollama:1.0");
+    }
+
+    @Test
+    void testBeanGavs_fallsBackToBeanName() throws Exception {
+        ForageCatalogReader catalog = ForageCatalogReader.fromInputStream(
+                new ByteArrayInputStream(FEATURE_ORDER_CATALOG_JSON.getBytes(StandardCharsets.UTF_8)));
+
+        // "other" is not in the selected feature: resolved by bean name
+        assertThat(CatalogDrivenExportCustomizer.beanGavs(catalog, "agent", modelKindEntry(), "other"))
+                .containsExactly("test:embeddings-other:1.0");
     }
 
     @Test

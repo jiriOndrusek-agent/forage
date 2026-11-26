@@ -6,6 +6,7 @@ import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
@@ -98,8 +99,9 @@ public class CatalogDrivenExportCustomizer implements ExportCustomizer {
                                     beanKinds = Set.of(entry.getDefaultValue());
                                 }
                                 for (String kind : beanKinds) {
-                                    // Add bean GAVs
-                                    Collection<String> beanGavs = catalog.getBeanGavs(kind);
+                                    // Add the bean GAV of the selected feature: bean names are unique per
+                                    // feature only (the agent ollama chat model and embeddings model)
+                                    Collection<String> beanGavs = beanGavs(catalog, factoryTypeKey, entry, kind);
                                     beanGavs.stream()
                                             .map(CatalogDrivenExportCustomizer::toMvnGav)
                                             .forEach(dependencies::add);
@@ -150,6 +152,17 @@ public class CatalogDrivenExportCustomizer implements ExportCustomizer {
         all.forEach(dep -> LOG.debug("  Dependency: {}", dep));
 
         return all;
+    }
+
+    static Collection<String> beanGavs(
+            ForageCatalogReader catalog, String factoryTypeKey, ConfigEntry entry, String kind) {
+        if (entry.getSelectsFrom() != null) {
+            Optional<String> gav = catalog.getFeatureBeanGav(factoryTypeKey, entry.getSelectsFrom(), kind);
+            if (gav.isPresent()) {
+                return List.of(gav.get());
+            }
+        }
+        return catalog.getBeanGavs(kind);
     }
 
     private static void addConfiguredBeanDependencies(
