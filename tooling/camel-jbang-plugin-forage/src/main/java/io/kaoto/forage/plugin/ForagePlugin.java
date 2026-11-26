@@ -2,10 +2,12 @@ package io.kaoto.forage.plugin;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.aesh.command.metadata.MetadataProviderRegistry;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
@@ -65,32 +67,63 @@ public class ForagePlugin implements Plugin {
      */
     @Override
     public Optional<PluginExporter> getExporter() {
-        return Optional.of(new PluginExporter() {
-            @Override
-            public Set<String> getDependencies(org.apache.camel.dsl.jbang.run.common.RuntimeType runtimeType) {
-                return dependencies(
-                        // camel run uses the jbang runtime, which is exported as main
-                        RuntimeType.fromValue(runtimeType.exportRuntime().name()),
-                        CommandLineHelper.getWorkDir().resolve("work/src/main/resources"));
-            }
+        return Optional.of(new Exporter(() -> CommandLineHelper.getWorkDir().resolve("work/src/main/resources")));
+    }
 
-            @Override
-            public boolean contributeRuntimeDependencies() {
-                return true;
-            }
+    /** Adds the runtime dependencies of the Forage configuration; for a Quarkus export removes replaced artifacts. */
+    static final class Exporter implements PluginExporter {
 
-            @Override
-            public void addSourceFiles(Path buildDir, String packageName, Printer printer) {
-                // This exporter contributes only runtime dependencies, not source files.
-            }
-        });
+        private final Supplier<Path> exportedResources;
+        // the bean artifacts the Quarkus translation replaced; Camel JBang asks for them after getDependencies
+        private final Set<String> replaced = new HashSet<>();
+
+        Exporter(Supplier<Path> exportedResources) {
+            this.exportedResources = exportedResources;
+        }
+
+        @Override
+        public Set<String> getDependencies(org.apache.camel.dsl.jbang.run.common.RuntimeType runtimeType) {
+            replaced.clear();
+            return dependencies(
+                    // camel run uses the jbang runtime, which is exported as main
+                    RuntimeType.fromValue(runtimeType.exportRuntime().name()), exportedResources.get(), replaced);
+        }
+
+        /** The silent run of the export added the replaced artifacts too, as the run keeps the Forage runtime. */
+        @Override
+        public Set<String> getDependenciesToRemove(org.apache.camel.dsl.jbang.run.common.RuntimeType runtimeType) {
+            return Set.copyOf(replaced);
+        }
+
+        @Override
+        public boolean contributeRuntimeDependencies() {
+            return true;
+        }
+
+        @Override
+        public void addSourceFiles(Path buildDir, String packageName, Printer printer) {
+            // This exporter contributes only runtime dependencies, not source files.
+        }
     }
 
     static Set<String> dependencies(RuntimeType runtime, Path exportedResources) {
+        return dependencies(runtime, exportedResources, new HashSet<>());
+    }
+
+    /**
+     * @param replaced gets the groupId:artifactId of the bean artifacts that the Quarkus translation replaced: none
+     *     when a module stays forage.* (all or nothing)
+     */
+    static Set<String> dependencies(RuntimeType runtime, Path exportedResources, Set<String> replaced) {
         // a run (also the silent run of an export) keeps the Forage runtime
         boolean run = RUN_STARTED.getAndSet(false);
         QuarkusExport.Result quarkus =
                 !run && runtime == RuntimeType.QUARKUS ? exportQuarkusConfig(exportedResources) : null;
+        if (quarkus != null) {
+            quarkus.removedDependencies().stream()
+                    .map(gav -> gav.substring(0, gav.indexOf(':', gav.indexOf(':') + 1)))
+                    .forEach(replaced::add);
+        }
         // gather dependencies across all (enabled) export customizers for the specific runtime
         return (quarkus == null
                         ? ExportHelper.getAllCustomizers()

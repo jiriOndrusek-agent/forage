@@ -523,6 +523,82 @@ class QuarkusExportTest {
                 .hasSize(expected.size() + 2);
     }
 
+    /**
+     * As Camel JBang exports: the silent run adds the Forage model artifact (it keeps the Forage runtime), the export
+     * asks to remove it as the quarkus-langchain4j extension replaces it.
+     */
+    @Test
+    void exportRemovesTheModelArtifactTheSilentRunAdded() throws IOException {
+        Files.writeString(project.resolve(AGENT_FILE), "forage.agent.model.kind=ollama\n");
+        Files.writeString(project.resolve("application.properties"), "");
+        camelExport();
+
+        Set<String> exported = new TreeSet<>(silentRun(org.apache.camel.dsl.jbang.run.common.RuntimeType.quarkus));
+        ForagePlugin.Exporter exporter = new ForagePlugin.Exporter(() -> resources);
+        exported.addAll(exporter.getDependencies(org.apache.camel.dsl.jbang.run.common.RuntimeType.quarkus));
+        Set<String> removed =
+                exporter.getDependenciesToRemove(org.apache.camel.dsl.jbang.run.common.RuntimeType.quarkus);
+
+        assertThat(removed).containsExactly("io.kaoto.forage:forage-model-ollama");
+        assertThat(exported).anyMatch(d -> d.startsWith("mvn:io.kaoto.forage:forage-model-ollama:"));
+        exported.removeIf(d -> removed.stream().anyMatch(ga -> d.startsWith("mvn:" + ga + ":")));
+        assertThat(exported)
+                .noneMatch(d -> d.startsWith("mvn:io.kaoto.forage:forage-model-ollama:"))
+                .anyMatch(d -> d.startsWith("mvn:io.quarkiverse.langchain4j:quarkus-langchain4j-ollama:"));
+    }
+
+    /** All or nothing: an agent that stays forage.* keeps its model artifacts, nothing is removed. */
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "forage.a1.agent.model.kind=ollama",
+                "forage.agent.model.kind=dashscope",
+                "forage.agent.model.kind=ollama;forage.a1.agent.model.kind=openai;forage.a1.agent.api.key=k",
+                "forage.agent.model.kind=openai;forage.agent.api.key={{env:KEY}}"
+            })
+    void exportRemovesNothingWhenTheAgentStaysForage(String lines) throws IOException {
+        Files.writeString(project.resolve(AGENT_FILE), lines.replace(";", "\n") + "\n");
+        Files.writeString(project.resolve("application.properties"), "");
+        camelExport();
+
+        Set<String> run = silentRun(org.apache.camel.dsl.jbang.run.common.RuntimeType.quarkus);
+        ForagePlugin.Exporter exporter = new ForagePlugin.Exporter(() -> resources);
+        exporter.getDependencies(org.apache.camel.dsl.jbang.run.common.RuntimeType.quarkus);
+
+        assertThat(run).anyMatch(d -> d.startsWith("mvn:io.kaoto.forage:forage-model-"));
+        assertThat(exporter.getDependenciesToRemove(org.apache.camel.dsl.jbang.run.common.RuntimeType.quarkus))
+                .isEmpty();
+    }
+
+    /** Only the Quarkus export translates: the other runtimes and a run remove nothing. */
+    @ParameterizedTest
+    @CsvSource({"main", "springBoot", "jbang"})
+    void otherRuntimesRemoveNothing(org.apache.camel.dsl.jbang.run.common.RuntimeType runtime) throws IOException {
+        Files.writeString(project.resolve(AGENT_FILE), "forage.agent.model.kind=ollama\n");
+        Files.writeString(project.resolve("application.properties"), "");
+        camelExport();
+
+        ForagePlugin.Exporter exporter = new ForagePlugin.Exporter(() -> resources);
+        assertThat(exporter.getDependencies(runtime))
+                .anyMatch(d -> d.startsWith("mvn:io.kaoto.forage:forage-model-ollama:"));
+        assertThat(exporter.getDependenciesToRemove(runtime)).isEmpty();
+
+        // the silent run of a Quarkus export keeps the Forage runtime
+        ForagePlugin.runStarted();
+        exporter.getDependencies(org.apache.camel.dsl.jbang.run.common.RuntimeType.quarkus);
+        assertThat(exporter.getDependenciesToRemove(org.apache.camel.dsl.jbang.run.common.RuntimeType.quarkus))
+                .isEmpty();
+        assertThat(resources.resolve("application.properties"))
+                .hasSameTextualContentAs(before.resolve("application.properties"));
+    }
+
+    /** The dependencies of the silent run of the export, on its own exporter. */
+    private Set<String> silentRun(org.apache.camel.dsl.jbang.run.common.RuntimeType runtime) {
+        ForagePlugin.runStarted();
+        return new ForagePlugin.Exporter(() -> resources).getDependencies(runtime);
+    }
+
     /** What has no quarkus-langchain4j equivalent keeps the whole agent on forage.*, with its model artifact. */
     @ParameterizedTest
     @CsvSource(
