@@ -4,7 +4,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.util.Properties;
 import org.apache.camel.dsl.jbang.core.commands.CamelJBangMain;
-import org.apache.camel.dsl.jbang.core.common.StringPrinter;
+import org.apache.camel.dsl.jbang.run.common.StringPrinter;
 import io.kaoto.forage.config.editor.PropertiesFileStrategyType;
 import io.kaoto.forage.core.common.VersionHelper;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -53,7 +53,7 @@ class ConfigWriteCommandTest {
                 }
                 """;
 
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(command, "input", jsonInput);
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
@@ -107,7 +107,7 @@ class ConfigWriteCommandTest {
                 }
                 """;
 
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(command, "input", jsonInput);
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
@@ -152,7 +152,7 @@ class ConfigWriteCommandTest {
                 }
                 """;
 
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(command, "input", jsonInput);
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
@@ -199,7 +199,7 @@ class ConfigWriteCommandTest {
                 }
                 """;
 
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(command, "input", jsonInput);
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
@@ -248,7 +248,7 @@ class ConfigWriteCommandTest {
                 }
                 """;
 
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(command, "input", jsonInput);
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
@@ -304,7 +304,7 @@ class ConfigWriteCommandTest {
                 }
                 """;
 
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(command, "input", jsonInput);
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
@@ -366,7 +366,8 @@ class ConfigWriteCommandTest {
                 }
                 """;
 
-        ConfigWriteCommand geminiCommand = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand geminiCommand =
+                new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(geminiCommand, "input", geminiInput);
         setField(geminiCommand, "directory", tempDir);
         setStrategy(geminiCommand, PropertiesFileStrategyType.APPLICATION);
@@ -408,7 +409,8 @@ class ConfigWriteCommandTest {
                 }
                 """;
 
-        ConfigWriteCommand jmsCommand = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand jmsCommand =
+                new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(jmsCommand, "input", jmsInput);
         setField(jmsCommand, "directory", tempDir);
         setStrategy(jmsCommand, PropertiesFileStrategyType.APPLICATION);
@@ -446,7 +448,7 @@ class ConfigWriteCommandTest {
     @Test
     void testWriteConfigWithEmptyInput() throws Exception {
         // Test error handling for empty input
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(command, "input", "");
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
@@ -464,7 +466,7 @@ class ConfigWriteCommandTest {
     @Test
     void testWriteConfigWithEmptyJson() throws Exception {
         // Test error handling for empty JSON object
-        ConfigWriteCommand command = new ConfigWriteCommand(new CamelJBangMain().withPrinter(printer));
+        ConfigWriteCommand command = new CamelJBangMain().withPrinter(printer).command(new ConfigWriteCommand());
         setField(command, "input", "{}");
         setField(command, "directory", tempDir);
         setStrategy(command, PropertiesFileStrategyType.APPLICATION);
