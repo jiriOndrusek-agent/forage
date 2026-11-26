@@ -21,6 +21,11 @@ public class TlsModuleDescriptor implements ForageModuleDescriptor<TlsConfig, Tl
         return "tls";
     }
 
+    /** Why the Quarkus export keeps this module on {@code forage.*}. Read by the catalog build. */
+    public String quarkusUnsupportedReason() {
+        return "the Quarkus TLS registry gives no Camel SSLContextParameters";
+    }
+
     @Override
     public TlsConfig createConfig(String prefix) {
         return new TlsConfig(prefix);
