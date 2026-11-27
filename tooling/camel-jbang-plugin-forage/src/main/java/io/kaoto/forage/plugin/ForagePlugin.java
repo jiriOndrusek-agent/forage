@@ -86,13 +86,23 @@ public class ForagePlugin implements Plugin {
     static Set<String> dependencies(RuntimeType runtime, Path exportedResources) {
         boolean run = RUN_STARTED.getAndSet(false);
         Set<String> quarkusModules = Set.of();
+        Path scanDir = null;
         if (runtime == RuntimeType.QUARKUS) {
-            // only the silent run of an export has the Quarkus runtime; Camel JBang writes its dependencies into the
-            // run data the export reads back, so it leaves out the Forage artifacts of the translated modules too
-            quarkusModules = run ? runQuarkusModules() : exportQuarkusConfig(exportedResources);
+            if (!run && System.getProperty(FRESH_RUN) == null) {
+                // the export reuses earlier run data, which may lack the Forage artifacts of the modules an earlier
+                // export translated, and has no project directory to scan: add them from the exported resources
+                new Printer.SystemOutPrinter()
+                        .println("Forage configuration stays as forage.* configuration: the export reuses earlier"
+                                + " run data.");
+                scanDir = exportedResources;
+            } else {
+                // only the silent run of an export has the Quarkus runtime; Camel JBang writes its dependencies into
+                // the run data the export reads back, so it leaves out the Forage artifacts of the translated modules
+                quarkusModules = run ? runQuarkusModules() : exportQuarkusConfig(exportedResources);
+            }
         }
         // gather dependencies across all (enabled) export customizers for the specific runtime
-        return ExportHelper.getAllCustomizers(quarkusModules)
+        return ExportHelper.getAllCustomizers(quarkusModules, scanDir)
                 .filter(ExportCustomizer::isEnabled)
                 .map(exportCustomizer -> exportCustomizer.resolveRuntimeDependencies(runtime))
                 .flatMap(Set::stream)
@@ -133,14 +143,9 @@ public class ForagePlugin implements Plugin {
             return Set.of();
         }
         Printer printer = new Printer.SystemOutPrinter();
-        String runModules = System.getProperty(FRESH_RUN);
-        if (runModules == null) {
-            printer.println(
-                    "Forage configuration stays as forage.* configuration: the export reuses earlier run data.");
-            return Set.of();
-        }
         try {
-            QuarkusExport.Result result = QuarkusExport.export(resources, Set.of(runModules.split(",")));
+            QuarkusExport.Result result = QuarkusExport.export(
+                    resources, Set.of(System.getProperty(FRESH_RUN).split(",")));
             result.notes().forEach(printer::println);
             return result.modules();
         } catch (Exception e) {

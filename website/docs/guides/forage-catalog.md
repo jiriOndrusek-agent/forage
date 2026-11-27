@@ -60,7 +60,7 @@ The reason is mandatory. An entry that no longer matches a scanned bean, or whos
 
 ```json
 {
-  "version": "2.0",
+  "version": "2.1",
   "generatedBy": "forage-maven-catalog-plugin",
   "timestamp": 1773133890023,
   "factories": [ ... ]
