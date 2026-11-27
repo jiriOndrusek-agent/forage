@@ -126,7 +126,7 @@ Export your project to Spring Boot or Quarkus with all Forage dependencies inclu
     camel export --runtime=quarkus --directory=./my-app
     ```
 
-On Quarkus, plain JDBC datasources and the default Artemis connection factory are also written as `quarkus.*` keys, and their Forage artifacts are left out. See the [migration guide](migration.md#upgrading-to-163) for details and the off switch.
+On Quarkus, plain JDBC datasources and the default Artemis connection factory are also written as `quarkus.*` keys, InfluxDB 1 clients, Spring RabbitMQ connection factories and TLS parameters as `camel.beans.*` keys, and their Forage artifacts are left out. See the [migration guide](migration.md#upgrading-to-163) for details and the off switch.
 
 ## Testing Connections
 

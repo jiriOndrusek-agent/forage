@@ -4,6 +4,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import io.kaoto.forage.core.common.ForageModuleDescriptor;
+import io.kaoto.forage.core.common.QuarkusBean;
 import io.kaoto.forage.core.messaging.SpringRabbitMQConnectionFactoryProvider;
 
 /**
@@ -23,9 +24,39 @@ public class SpringRabbitMQModuleDescriptor
         return SpringRabbitMQConstants.MODULE_PREFIX;
     }
 
-    /** Why the Quarkus export keeps this module on {@code forage.*}. Read by the catalog build. */
-    public String quarkusUnsupportedReason() {
-        return "needs a Spring AMQP ConnectionFactory; quarkus-messaging-rabbitmq is a different client";
+    private static final String RABBIT = "rabbitConnectionFactory.";
+
+    private static final QuarkusBean QUARKUS_BEAN = new QuarkusBean(
+            List.of("#class:org.springframework.amqp.rabbit.connection.CachingConnectionFactory"),
+            Map.ofEntries(
+                    Map.entry("host", List.of(RABBIT + "host")),
+                    Map.entry("port", List.of(RABBIT + "port")),
+                    Map.entry("username", List.of(RABBIT + "username")),
+                    Map.entry("password", List.of(RABBIT + "password")),
+                    Map.entry("virtual.host", List.of(RABBIT + "virtualHost")),
+                    Map.entry("requested.heartbeat", List.of(RABBIT + "requestedHeartbeat")),
+                    Map.entry("connection.timeout", List.of(RABBIT + "connectionTimeout")),
+                    Map.entry("automatic.recovery.enabled", List.of(RABBIT + "automaticRecoveryEnabled")),
+                    Map.entry("network.recovery.interval", List.of(RABBIT + "networkRecoveryInterval")),
+                    Map.entry("channel.cache.size", List.of("channelCacheSize")),
+                    Map.entry("connection.cache.size", List.of("connectionCacheSize")),
+                    Map.entry("channel.checkout.timeout", List.of("channelCheckoutTimeout")),
+                    Map.entry("addresses", List.of("addresses")),
+                    Map.entry("cache.mode", List.of("cacheMode"))),
+            Map.of(),
+            List.of(
+                    "org.springframework.amqp.rabbit.connection.AbstractConnectionFactory",
+                    "com.rabbitmq.client.ConnectionFactory"),
+            List.of("org.springframework.amqp:spring-rabbit", "com.rabbitmq:amqp-client"),
+            List.of());
+
+    /**
+     * The Quarkus export creates the {@code CachingConnectionFactory} as {@link SpringRabbitMQConnectionFactoryHelper}
+     * does: the RabbitMQ client keys on its {@code rabbitConnectionFactory}, the cache keys on it. Read by the catalog
+     * build.
+     */
+    public QuarkusBean quarkusBean() {
+        return QUARKUS_BEAN;
     }
 
     @Override

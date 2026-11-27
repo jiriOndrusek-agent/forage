@@ -69,7 +69,9 @@ The reason is mandatory. An entry that no longer matches a scanned bean, or whos
 
 The `factories` array is the core of the catalog. Each entry describes one Forage factory and everything needed to configure and use it.
 
-`quarkusUnsupported` maps a module prefix (e.g. `cxf`) to the reason `camel export --runtime=quarkus` keeps it on `forage.*`. From the module descriptor's `quarkusUnsupportedReason()`. Every module descriptor declares either `quarkusProperties()` or this reason.
+`quarkusUnsupported` maps a module prefix (e.g. `cxf`) to the reason `camel export --runtime=quarkus` keeps it on `forage.*`. From the module descriptor's `quarkusUnsupportedReason()`. Every module descriptor declares exactly one of `quarkusProperties()`, `quarkusBean()` or this reason.
+
+`quarkusBeans` maps a module prefix (e.g. `influxdb`) to how the export creates its bean with plain Camel `camel.beans.*` keys, from the module descriptor's `quarkusBean()`: `create` (the `camel.beans.<name>` alternatives, `{key}` = a Forage key value; the first whose keys are set is used), `properties` (Forage key → bean properties, dotted for nested beans), `nested` (bean property → `#class:` value, written when a key below it is set), `reflection`, `indexDependencies` and `resources` (for the native build). Keys are given after `forage.<module>.`.
 
 ### Factory
 

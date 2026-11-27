@@ -529,18 +529,15 @@ class QuarkusExportTest {
      */
     @Test
     void keepsModulesWithoutQuarkusMetadataOnForage() throws IOException {
-        assertThat(QuarkusExport.table(ForageCatalogReader.getInstance())).containsOnlyKeys("jdbc", "jms");
+        assertThat(QuarkusExport.table(ForageCatalogReader.getInstance()))
+                .containsOnlyKeys("influxdb", "jdbc", "jms", "rabbitmq", "tls");
         Map<String, String> files = Map.of(
                 "forage-agent-factory.properties",
                 "forage.agent.model.kind=ollama\nforage.agent.model.name=granite4:3b\n",
                 "forage-cxf.properties",
                 "forage.cxf.address=http://localhost:8080/hello\n",
-                "forage-influxdb.properties",
-                "forage.influxdb.url=http://localhost:8086\n",
-                "forage-spring-rabbitmq.properties",
-                "forage.rabbitmq.host=localhost\n",
                 "forage-security-tls.properties",
-                "forage.tls.keystore.path=keystore.p12\nforage.tls.keystore.type=PKCS12\n");
+                "forage.tls.keystore.path=keystore.p12\nforage.tls.cipher.suites=TLS_AES_128_GCM_SHA256\n");
         for (var file : files.entrySet()) {
             Files.writeString(project.resolve(file.getKey()), file.getValue());
             Files.writeString(resources.resolve(file.getKey()), file.getValue());
@@ -556,7 +553,7 @@ class QuarkusExportTest {
         assertThat(resources.resolve("application.properties")).doesNotExist();
         assertThat(run).isEqualTo(untranslated);
         assertThat(exported).isEqualTo(untranslated);
-        for (String module : List.of("agent", "cxf", "influxdb", "rabbitmq", "tls")) {
+        for (String module : List.of("agent", "cxf", "tls")) {
             assertThat(untranslated).anyMatch(d -> d.startsWith("mvn:io.kaoto.forage:") && d.contains(module));
         }
     }
@@ -576,8 +573,7 @@ class QuarkusExportTest {
         assertThat(result.properties()).isEmpty();
         assertThat(result.notes())
                 .containsExactly(
-                        "Forage cxf stays as forage.* configuration: quarkus-cxf configures JAX-WS services,"
-                                + " not Camel CxfEndpoint beans.",
+                        "Forage cxf stays as forage.* configuration: " + reasons.get("cxf") + ".",
                         "Forage spring.security stays as forage.* configuration: " + reasons.get("spring.security")
                                 + ".");
     }
