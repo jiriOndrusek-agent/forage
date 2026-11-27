@@ -20,6 +20,7 @@ import io.kaoto.forage.catalog.model.FeatureBeans;
 import io.kaoto.forage.catalog.model.ForageBean;
 import io.kaoto.forage.catalog.model.ForageCatalog;
 import io.kaoto.forage.catalog.model.ForageFactory;
+import io.kaoto.forage.catalog.model.QuarkusBean;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -327,6 +328,15 @@ public final class ForageCatalogReader {
      */
     public Map<String, String> getQuarkusUnsupported() {
         return catalog.getQuarkusUnsupported() == null ? Map.of() : catalog.getQuarkusUnsupported();
+    }
+
+    /**
+     * Per module (the module descriptor's prefix): how the Quarkus export creates its bean with {@code camel.beans.*}.
+     *
+     * @return the beans; empty if no module declares one
+     */
+    public Map<String, QuarkusBean> getQuarkusBeans() {
+        return catalog.getQuarkusBeans() == null ? Map.of() : catalog.getQuarkusBeans();
     }
 
     /**

@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.logging.Log;
@@ -28,6 +29,7 @@ import io.kaoto.forage.catalog.model.ForageBean;
 import io.kaoto.forage.catalog.model.ForageCatalog;
 import io.kaoto.forage.catalog.model.ForageConfigurationCatalog;
 import io.kaoto.forage.catalog.model.ForageFactory;
+import io.kaoto.forage.catalog.model.QuarkusBean;
 import io.kaoto.forage.catalog.model.QuarkusSelector;
 import io.kaoto.forage.core.annotations.FactoryType;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -50,6 +52,8 @@ public class CatalogGenerator {
     private List<ExcludedBean> excludedBeans = List.of();
     /** Per module prefix: why the Quarkus export keeps it on forage.* (sorted: a stable catalog). */
     private final Map<String, String> quarkusUnsupported = new TreeMap<>();
+    /** Per module prefix: how the Quarkus export creates its bean with camel.beans.* (sorted: a stable catalog). */
+    private final Map<String, QuarkusBean> quarkusBeans = new TreeMap<>();
 
     public CatalogGenerator(Log log) {
         this.log = log;
@@ -109,17 +113,29 @@ public class CatalogGenerator {
                     try {
                         accessor = type.getMethod("quarkusProperties");
                     } catch (NoSuchMethodException e) {
+                        accessor = null;
+                    }
+                    Object bean = optional(descriptor, "quarkusBean");
+                    Object reason = optional(descriptor, "quarkusUnsupportedReason");
+                    if ((accessor != null || bean != null) && reason != null) {
+                        throw new IllegalStateException(descriptorClass
+                                + " declares quarkusUnsupportedReason() with quarkusProperties() or quarkusBean()");
+                    }
+                    if (accessor != null && bean != null) {
+                        throw new IllegalStateException(
+                                descriptorClass + " declares both quarkusProperties() and quarkusBean()");
+                    }
+                    if (accessor == null && bean == null) {
                         // no Quarkus export for this module
-                        if (optional(descriptor, "quarkusUnsupportedReason") instanceof String reason) {
-                            quarkusUnsupported.put(module, reason);
+                        if (reason instanceof String text) {
+                            quarkusUnsupported.put(module, text);
                         }
                         continue;
                     }
-                    if (optional(descriptor, "quarkusUnsupportedReason") != null) {
-                        throw new IllegalStateException(
-                                descriptorClass + " declares both quarkusProperties() and quarkusUnsupportedReason()");
+                    if (bean != null) {
+                        quarkusBeans.put(module, quarkusBean(components, descriptorClass, module, bean));
                     }
-                    for (Object property : (List<?>) accessor.invoke(descriptor)) {
+                    for (Object property : accessor == null ? List.of() : (List<?>) accessor.invoke(descriptor)) {
                         String forageKey = (String) call(property, "forageKey");
                         String name = "forage." + module + "."
                                 + (forageKey.endsWith(".")
@@ -171,6 +187,48 @@ public class CatalogGenerator {
         }
     }
 
+    /**
+     * Reads a descriptor's {@code quarkusBean()}: the Forage keys of its properties and of the {@code {key}} values of
+     * its alternatives must be config entries of the module.
+     */
+    private static QuarkusBean quarkusBean(
+            List<ForageComponent> components, String descriptorClass, String module, Object bean)
+            throws ReflectiveOperationException {
+        List<String> create = new ArrayList<>();
+        for (Object alternative : (List<?>) call(bean, "create")) {
+            create.add((String) alternative);
+        }
+        Map<String, List<String>> properties = new TreeMap<>();
+        ((Map<?, ?>) call(bean, "properties"))
+                .forEach((k, v) -> properties.put(
+                        (String) k,
+                        ((List<?>) v).stream().map(String.class::cast).toList()));
+        Map<String, String> nested = new TreeMap<>();
+        ((Map<?, ?>) call(bean, "nested")).forEach((k, v) -> nested.put((String) k, (String) v));
+        List<String> reflection = ((List<?>) call(bean, "reflection"))
+                .stream().map(String.class::cast).toList();
+        List<String> indexDependencies = ((List<?>) call(bean, "indexDependencies"))
+                .stream().map(String.class::cast).toList();
+        List<String> resources = ((List<?>) call(bean, "resources"))
+                .stream().map(String.class::cast).toList();
+        List<String> nativeBuildArgs = ((List<?>) call(bean, "nativeBuildArgs"))
+                .stream().map(String.class::cast).toList();
+        String source = descriptorClass + ".quarkusBean()";
+        if (nativeBuildArgs.stream().anyMatch(arg -> arg.contains(","))) {
+            throw new IllegalStateException(source + " has a native build argument with a comma");
+        }
+        Set<String> keys = new TreeSet<>(properties.keySet());
+        keys.addAll(resources);
+        create.forEach(alternative -> keys.addAll(QuarkusBean.keys(alternative)));
+        for (String key : keys) {
+            entries(components, source, "forage." + module + "." + key);
+        }
+        if (create.isEmpty()) {
+            throw new IllegalStateException(source + " has no create alternative");
+        }
+        return new QuarkusBean(create, properties, nested, reflection, indexDependencies, resources, nativeBuildArgs);
+    }
+
     /** The config entries named {@code name}; fails when there is none. */
     private static List<ConfigEntry> entries(List<ForageComponent> components, String source, String name) {
         List<ConfigEntry> entries = components.stream()
@@ -215,6 +273,7 @@ public class CatalogGenerator {
         catalog.setVersion("2.1");
         catalog.setFactories(factories);
         catalog.setQuarkusUnsupported(quarkusUnsupported.isEmpty() ? null : quarkusUnsupported);
+        catalog.setQuarkusBeans(quarkusBeans.isEmpty() ? null : quarkusBeans);
         catalog.setRuntimeVersions(collectRuntimeVersions(projectProperties));
         catalog.setGeneratedBy("forage-maven-catalog-plugin");
         catalog.setTimestamp(System.currentTimeMillis());

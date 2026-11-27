@@ -1,5 +1,6 @@
 package io.kaoto.forage.catalog;
 
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.URL;
 import java.nio.file.FileSystem;
@@ -15,6 +16,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.stream.Stream;
 import io.kaoto.forage.core.common.ForageModuleDescriptor;
+import io.kaoto.forage.core.common.QuarkusBean;
 import io.kaoto.forage.jdbc.common.JdbcModuleDescriptor;
 import io.kaoto.forage.jms.common.JmsModuleDescriptor;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -104,19 +106,20 @@ class QuarkusPropertiesCatalogTest {
     void everyModuleDescriptorDeclaresItsQuarkusExport() throws Exception {
         Set<String> mapped = mapped("forage-catalog.json").keySet();
         JsonNode reasons = read("forage-catalog.json").path("quarkusUnsupported");
+        JsonNode beans = read("forage-catalog.json").path("quarkusBeans");
         Set<String> modules = new TreeSet<>();
         for (Class<?> type : moduleDescriptors()) {
             String module =
                     ((ForageModuleDescriptor<?, ?>) type.getConstructor().newInstance()).modulePrefix();
             modules.add(module);
             boolean keys = mapped.stream().anyMatch(name -> name.startsWith("forage." + module + "."));
+            boolean bean = beans.has(module);
             String reason = reasons.path(module).asText("");
-            assertThat(keys || !reason.isBlank())
-                    .as(type.getName() + " declares neither quarkusProperties() nor quarkusUnsupportedReason()")
-                    .isTrue();
-            assertThat(keys && !reason.isBlank())
-                    .as(type.getName() + " declares both")
-                    .isFalse();
+            assertThat(Stream.of(keys, bean, !reason.isBlank()).filter(b -> b).count())
+                    .as(
+                            type.getName()
+                                    + " declares not exactly one of quarkusProperties(), quarkusBean(), quarkusUnsupportedReason()")
+                    .isEqualTo(1);
         }
         assertThat(modules)
                 .contains(
@@ -132,6 +135,36 @@ class QuarkusPropertiesCatalogTest {
                         "spring.security",
                         "tls");
         assertThat(modules).containsAll(() -> reasons.fieldNames());
+        assertThat(modules).containsAll(() -> beans.fieldNames());
+    }
+
+    /** The catalog's {@code quarkusBeans} are exactly the descriptors' {@code quarkusBean()}. */
+    @Test
+    void catalogHasTheBeans() throws Exception {
+        Map<String, Object> expected = new TreeMap<>();
+        for (Class<?> type : moduleDescriptors()) {
+            Object descriptor = type.getConstructor().newInstance();
+            Method method;
+            try {
+                method = type.getMethod("quarkusBean");
+            } catch (NoSuchMethodException e) {
+                continue;
+            }
+            QuarkusBean bean = (QuarkusBean) method.invoke(descriptor);
+            Map<String, Object> json = new TreeMap<>();
+            json.put("create", bean.create());
+            json.put("properties", bean.properties());
+            json.put("nested", bean.nested());
+            json.put("reflection", bean.reflection());
+            json.put("indexDependencies", bean.indexDependencies());
+            json.put("resources", bean.resources());
+            json.put("nativeBuildArgs", bean.nativeBuildArgs());
+            json.values().removeIf(v -> v instanceof Map<?, ?> m ? m.isEmpty() : ((List<?>) v).isEmpty());
+            expected.put(((ForageModuleDescriptor<?, ?>) descriptor).modulePrefix(), json);
+        }
+
+        assertThat(MAPPER.convertValue(read("forage-catalog.json").path("quarkusBeans"), Map.class))
+                .isEqualTo(expected);
     }
 
     /** The concrete ForageModuleDescriptor classes under io.kaoto.forage on the test classpath. */

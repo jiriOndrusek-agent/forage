@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -22,6 +23,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import io.kaoto.forage.catalog.model.ConfigEntry;
 import io.kaoto.forage.catalog.model.ForageBean;
+import io.kaoto.forage.catalog.model.QuarkusBean;
 import io.kaoto.forage.catalog.model.QuarkusSelector;
 import io.kaoto.forage.catalog.reader.ForageCatalogReader;
 import io.kaoto.forage.core.util.config.ConfigHelper;
@@ -35,7 +37,9 @@ import io.kaoto.forage.core.util.config.PropertyFileSource;
  * stay; each Quarkus key reads its Forage key as {@code ${FORAGE_<KEY>:${forage.<key>:<value>}}}, so {@code FORAGE_*}
  * and then {@code -Dforage.*} still win, as in Forage. The module files are not read at runtime. A module with anything
  * the catalog does not map stays {@code forage.*} as before; a configured module the catalog lists in
- * {@code quarkusUnsupported} gets a note with the reason.
+ * {@code quarkusUnsupported} gets a note with the reason. A module whose bean no Quarkus extension creates may instead
+ * declare in the catalog ({@code quarkusBeans}) how plain Camel {@code camel.beans.*} keys create it; the export then
+ * writes those keys and the native build keys for their classes.
  */
 final class QuarkusExport {
 
@@ -48,6 +52,21 @@ final class QuarkusExport {
     private record To(String key, String unit, boolean ignored, QuarkusSelector selector) {}
 
     private static final To IGNORED = new To(null, "", true, null);
+    private static final To HANDLED = new To(null, "", false, null);
+
+    /** Comma-separated lists: the values of all modules and of the exported application.properties are joined. */
+    private static final String REFLECTION = "quarkus.camel.native.reflection.include-patterns";
+
+    private static final String RESOURCES = "quarkus.native.resources.includes";
+
+    private static final String BUILD_ARGS = "quarkus.native.additional-build-args";
+
+    private static final Set<String> LISTS = Set.of(REFLECTION, RESOURCES, BUILD_ARGS);
+
+    /** A name {@code camel.beans.<name>} binds as it is. */
+    private static final Pattern BEAN_NAME = Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*");
+
+    private static final Pattern CLASS = Pattern.compile("#class:([A-Za-z0-9_$.]+)");
 
     /**
      * Per module: the Forage keys (after {@code forage.[<name>.]<module>.}; ending with {@code .}: a map) with a
@@ -59,6 +78,12 @@ final class QuarkusExport {
         for (var factory : catalog.getAllFactories()) {
             String module = factory.factoryTypeKey();
             Map<String, To> keys = new TreeMap<>();
+            QuarkusBean bean = catalog.getQuarkusBeans().get(module);
+            if (bean != null) {
+                // set by the camel.beans.* keys of the bean
+                bean.getProperties().keySet().forEach(key -> keys.put(key, HANDLED));
+                bean.getCreate().forEach(create -> QuarkusBean.keys(create).forEach(key -> keys.put(key, HANDLED)));
+            }
             for (ConfigEntry entry : factory.configEntries()) {
                 String to = entry.getQuarkusProperty();
                 String key = entry.getName().substring(("forage." + module + ".").length());
@@ -73,7 +98,7 @@ final class QuarkusExport {
                     keys.put(key, new To(null, "", false, selector));
                 }
             }
-            if (keys.values().stream().anyMatch(to -> to.key() != null)) {
+            if (bean != null || keys.values().stream().anyMatch(to -> to.key() != null)) {
                 table.put(module, keys);
             }
         }
@@ -97,7 +122,10 @@ final class QuarkusExport {
         Result result = translate(resources, existing, allowed);
         Properties added = new Properties();
         result.properties().forEach((key, value) -> {
-            if (existing.stringPropertyNames().stream()
+            if (LISTS.contains(key) && existing.getProperty(key) != null) {
+                // the later line wins: keep the user's entries
+                added.setProperty(key, join(existing.getProperty(key), value));
+            } else if (existing.stringPropertyNames().stream()
                     .noneMatch(k -> unquoted(k).equals(unquoted(key)))) {
                 added.setProperty(key, value); // a user quarkus.* key wins, as before
             }
@@ -185,10 +213,13 @@ final class QuarkusExport {
                 result.notes().add("Forage " + module + " stays as forage.* configuration: " + reason + ".");
                 continue;
             }
-            result.properties().putAll(translated);
+            translated.forEach((key, value) ->
+                    result.properties().merge(key, value, (a, b) -> LISTS.contains(key) ? join(a, b) : b));
             result.modules().add(module);
             result.notes()
-                    .add("Forage " + module + " exported as quarkus.* configuration: " + String.join(", ", files)
+                    .add("Forage " + module + " exported as "
+                            + (catalog.getQuarkusBeans().containsKey(module) ? "camel.beans.*" : "quarkus.*")
+                            + " configuration: " + String.join(", ", files)
                             + " not read at runtime, a copy mounted later is ignored; override with FORAGE_*,"
                             + " -Dforage.* or forage.* keys in config/application.properties, or keep forage.* with"
                             + " FORAGE_QUARKUS_TRANSLATION_SKIP=true.");
@@ -316,6 +347,20 @@ final class QuarkusExport {
                 translated.putAll(selector.getKinds().get(kind));
             }
         }
+        QuarkusBean bean = catalog.getQuarkusBeans().get(module);
+        if (bean != null) {
+            String reason = bean(
+                    bean,
+                    name.isEmpty() ? metadata.defaultBeanName() : name,
+                    prefix,
+                    values,
+                    defaults,
+                    origins,
+                    translated);
+            if (reason != null) {
+                return reason;
+            }
+        }
         String quarkusName = "\"" + (name.isEmpty() ? metadata.defaultBeanName() : name) + "\"";
         for (var entry : table.entrySet()) {
             To to = entry.getValue();
@@ -339,6 +384,129 @@ final class QuarkusExport {
             }
         }
         return null;
+    }
+
+    /**
+     * Adds the {@code camel.beans.<bean>} keys of one configuration and the keys the native build needs for them, or
+     * returns why the module stays forage.*. A key not set and without a default writes nothing; a nested bean is
+     * created only when a key below it is set.
+     */
+    private static String bean(
+            QuarkusBean bean,
+            String beanName,
+            String prefix,
+            Map<String, String> values,
+            Map<String, String> defaults,
+            Map<String, String> origins,
+            Map<String, String> translated) {
+        if (!BEAN_NAME.matcher(beanName).matches()) {
+            return "the bean name " + beanName + " cannot be a camel.beans.* name";
+        }
+        String create = bean.getCreate().stream()
+                .filter(alternative -> QuarkusBean.keys(alternative).stream()
+                        .allMatch(key -> values.containsKey(prefix + key) || defaults.containsKey(prefix + key)))
+                .findFirst()
+                .orElse(null);
+        if (create == null) {
+            return "the keys set do not create the bean";
+        }
+        Set<String> used = QuarkusBean.keys(create);
+        // a key set but left out by the alternative (e.g. a username without a password) would be dropped
+        for (String key : allCreateKeys(bean)) {
+            if (!used.contains(key) && !bean.getProperties().containsKey(key) && values.containsKey(prefix + key)) {
+                return prefix + key + " is not used by the bean";
+            }
+        }
+        Map<String, String> lines = new TreeMap<>();
+        Set<String> set = new TreeSet<>(); // bean properties of keys set, not defaulted
+        Matcher m = QuarkusBean.KEY.matcher(create);
+        StringBuilder value = new StringBuilder();
+        while (m.find()) {
+            String key = prefix + m.group(1);
+            String v = values.getOrDefault(key, defaults.get(key));
+            if (v.contains("'")) {
+                return key + " cannot be written as a Camel argument";
+            }
+            m.appendReplacement(
+                    value, Matcher.quoteReplacement(expression(key, v, !APPLICATION.equals(origins.get(key)))));
+        }
+        m.appendTail(value);
+        for (var property : bean.getProperties().entrySet()) {
+            String key = prefix + property.getKey();
+            String v = values.getOrDefault(key, defaults.get(key));
+            if (v == null) {
+                continue;
+            }
+            if (v.startsWith("#")) {
+                // Camel would read it as a bean reference
+                return key + " cannot be written as a Camel bean property";
+            }
+            for (String path : property.getValue()) {
+                lines.put(path, expression(key, v, !APPLICATION.equals(origins.get(key))));
+                if (values.containsKey(key)) {
+                    set.add(path);
+                }
+            }
+        }
+        Set<String> nested = new TreeSet<>();
+        bean.getNested().keySet().stream()
+                .filter(path -> set.stream().anyMatch(p -> p.startsWith(path + ".")))
+                .forEach(nested::add);
+        lines.keySet().removeIf(path -> bean.getNested().keySet().stream()
+                .anyMatch(n -> path.startsWith(n + ".") && !nested.contains(n)));
+        String base = "camel.beans." + beanName;
+        translated.put(base, value.toString());
+        nested.forEach(
+                path -> translated.put(base + "." + path, bean.getNested().get(path)));
+        lines.forEach((path, v) -> translated.put(base + "." + path, v));
+        // the native build reflects on the #class: types; they must be in the Jandex index
+        Set<String> classes = new TreeSet<>(bean.getReflection());
+        Stream.concat(Stream.of(create), nested.stream().map(bean.getNested()::get))
+                .forEach(v -> {
+                    Matcher c = CLASS.matcher(v);
+                    while (c.find()) {
+                        classes.add(c.group(1));
+                    }
+                });
+        if (!classes.isEmpty()) {
+            translated.merge(REFLECTION, String.join(",", classes), QuarkusExport::join);
+        }
+        // a classpath resource (a path without a scheme other than classpath:) goes into the native image
+        for (String key : bean.getResources()) {
+            String v = values.get(prefix + key);
+            if (v != null && !v.isBlank()) {
+                String path = v.startsWith("classpath:") ? v.substring("classpath:".length()) : v;
+                if (!path.contains(":") && !path.startsWith("/")) {
+                    translated.merge(RESOURCES, path, QuarkusExport::join);
+                }
+            }
+        }
+        if (!bean.getNativeBuildArgs().isEmpty()) {
+            translated.merge(BUILD_ARGS, String.join(",", bean.getNativeBuildArgs()), QuarkusExport::join);
+        }
+        for (String dependency : bean.getIndexDependencies()) {
+            String[] ga = dependency.split(":");
+            translated.put("quarkus.index-dependency." + ga[1] + ".group-id", ga[0]);
+            translated.put("quarkus.index-dependency." + ga[1] + ".artifact-id", ga[1]);
+        }
+        return null;
+    }
+
+    private static Set<String> allCreateKeys(QuarkusBean bean) {
+        Set<String> keys = new TreeSet<>();
+        bean.getCreate().forEach(alternative -> keys.addAll(QuarkusBean.keys(alternative)));
+        return keys;
+    }
+
+    /** Joins two comma-separated lists without duplicates. */
+    private static String join(String a, String b) {
+        Set<String> items = new LinkedHashSet<>();
+        for (String item : (a + "," + b).split(",")) {
+            if (!item.isBlank()) {
+                items.add(item.trim());
+            }
+        }
+        return String.join(",", items);
     }
 
     /** Why other files keep the module forage.*, or {@code null}. */
