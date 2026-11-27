@@ -4,7 +4,45 @@ Vector databases store embeddings for similarity search, used in RAG (Retrieval-
 
 ## Available Providers
 
-{{ forage_beans_table("Agent", "Embedding Store") }}
+{{ forage_beans_table("Embedding Store", "Embedding Store") }}
+
+## Embedding Store Beans
+
+| Plain Camel / JBang | Spring Boot | Quarkus |
+|---|---|---|
+| `forage-embedding-store` | `forage-embedding-store-starter` | `forage-quarkus-embedding-store` |
+
+`forage.vectordb.kind` creates an `EmbeddingStore` bean named `embeddingStore`.
+`forage.<name>.vectordb.kind` creates a bean named `<name>`; named beans replace the default one.
+Provider properties keep their keys and take the same prefix, e.g. `forage.<name>.pgvector.host`.
+Put them in `application.properties` or in the provider file, e.g. `forage-vectordb-pgvector.properties`.
+
+```properties
+forage.vectordb.kind=pgvector
+forage.pgvector.host=localhost
+forage.pgvector.database=vectors
+forage.pgvector.user=forage
+forage.pgvector.dimension=384
+```
+
+Set `FORAGE_PGVECTOR_PASSWORD` in the environment.
+
+The `in-memory-store` bean starts empty. Its seed file (`in.memory.store.file.source`) needs an
+embedding model and is used by agents only.
+
+The `langchain4j-embeddingstore` component autowires a single `EmbeddingStore` bean, and a single
+`EmbeddingModel` bean to embed text bodies. A route can ingest documents that another route searches:
+
+```yaml
+- to:
+    uri: langchain4j-embeddings:embed
+- to:
+    uri: langchain4j-embeddingstore:docs
+    parameters:
+      action: ADD
+```
+
+With several beans, select one with `embeddingStore: "#bean:<name>"`.
 
 ## RAG Configuration
 

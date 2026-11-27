@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import io.kaoto.forage.core.util.config.Config;
+import io.kaoto.forage.core.util.config.ConfigHelper;
 
 /**
  * Runtime-agnostic descriptor that captures all module-specific knowledge for a Forage module
@@ -21,6 +22,25 @@ public interface ForageModuleDescriptor<C extends Config, P extends BeanProvider
      * The module prefix used in property names, e.g., {@code "jdbc"} or {@code "jms"}.
      */
     String modulePrefix();
+
+    /**
+     * Regexp that finds named instances; group 1 is the instance name. Override it when keys of
+     * other modules can contain {@code .<modulePrefix>.} (e.g. {@code forage.milvus.retrieve.embeddings.on.search}).
+     *
+     * @since 1.6
+     */
+    default String namedPropertyRegexp() {
+        return ConfigHelper.getNamedPropertyRegexp(modulePrefix());
+    }
+
+    /**
+     * Regexp that detects the default (unnamed) instance.
+     *
+     * @since 1.6
+     */
+    default String defaultPropertyRegexp() {
+        return ConfigHelper.getDefaultPropertyRegexp(modulePrefix());
+    }
 
     /**
      * Creates a Config instance for a given prefix ({@code null} for default/non-prefixed configuration).

@@ -1,9 +1,11 @@
 package io.kaoto.forage.core.common;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.ServiceLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import io.kaoto.forage.core.annotations.ForageBean;
 
 /**
  * Utility class for working with Java's ServiceLoader mechanism in the Forage framework.
@@ -84,6 +86,34 @@ public class ServiceLoaderHelper {
         }
 
         return providers.stream().filter(p -> isEquals(name, p)).findFirst().orElse(null);
+    }
+
+    /**
+     * Finds the provider whose {@link ForageBean} value equals {@code kind} (e.g. {@code ollama}).
+     *
+     * @param what the provider description used in the error message (e.g. "embedding model")
+     * @throws IllegalStateException if no provider matches; the message lists the available kinds
+     * @since 1.6
+     */
+    public static <T> ServiceLoader.Provider<T> findProviderByBeanName(
+            List<ServiceLoader.Provider<T>> providers, String kind, String what) {
+        return providers.stream()
+                .filter(provider -> kind.equals(beanName(provider)))
+                .findFirst()
+                .orElseThrow(() -> {
+                    List<String> kinds = providers.stream()
+                            .map(ServiceLoaderHelper::beanName)
+                            .filter(Objects::nonNull)
+                            .toList();
+                    return new IllegalStateException(
+                            "No %s provider found for kind '%s'. Available kinds: %s. Add the provider dependency."
+                                    .formatted(what, kind, kinds));
+                });
+    }
+
+    private static String beanName(ServiceLoader.Provider<?> provider) {
+        ForageBean bean = provider.type().getAnnotation(ForageBean.class);
+        return bean != null ? bean.value() : null;
     }
 
     /**

@@ -277,6 +277,7 @@ public class MyModuleDescriptor implements ForageModuleDescriptor<MyModuleConfig
 
 **Best practices:**
 - `modulePrefix()` must match the segment after `forage.` in property names
+- Override `namedPropertyRegexp()` and `defaultPropertyRegexp()` when keys of other modules can contain `.<modulePrefix>.` (the embedding model factory finds its instances by `forage.[<name>.]embeddings.kind` only)
 - `translateProperties()` is only needed when Quarkus creates the primary bean natively — return empty map if Forage creates all beans
 - `auxiliaryBeans()` returns beans that must be created alongside the primary bean (e.g., aggregation repositories for JDBC)
 

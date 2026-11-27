@@ -451,6 +451,39 @@ class ConfigReadCommandTest {
     }
 
     @Test
+    void testOllamaKeysOfAnAgentStayWithTheAgent() throws Exception {
+        // ollama is listed by the Agent and the Embedding Model factory; the Agent is listed first
+        String propertiesContent =
+                """
+                forage.agent.model.kind=ollama
+                forage.ollama.model.name=llama3
+                forage.ollama.embedding.model.name=nomic-embed-text
+                """;
+
+        File propsFile = new File(tempDir, "application.properties");
+        try (FileWriter writer = new FileWriter(propsFile)) {
+            writer.write(propertiesContent);
+        }
+
+        ConfigReadCommand command = new ConfigReadCommand(new CamelJBangMain().withPrinter(printer));
+        setField(command, "directory", tempDir);
+        setField(command, "strategy", "application");
+
+        assertThat(command.doCall()).isEqualTo(0);
+
+        JsonNode beans = OBJECT_MAPPER.readTree(printer.getOutput()).get("beans");
+        assertThat(beans)
+                .allSatisfy(bean -> assertThat(bean.get("name").asText()).isEqualTo("agent"));
+        assertThat(beans).anySatisfy(bean -> {
+            assertThat(bean.get("kind").asText()).isEqualTo("ollama");
+            assertThat(bean.get("javaType").asText()).isEqualTo("dev.langchain4j.model.chat.ChatModel");
+            assertThat(bean.get("configuration").get("model.name").asText()).isEqualTo("llama3");
+            assertThat(bean.get("configuration").get("embedding.model.name").asText())
+                    .isEqualTo("nomic-embed-text");
+        });
+    }
+
+    @Test
     void testReadConfigWithNoPropertiesFiles() throws Exception {
         // Create an empty temp directory (no properties files)
         ConfigReadCommand command = new ConfigReadCommand(new CamelJBangMain().withPrinter(printer));

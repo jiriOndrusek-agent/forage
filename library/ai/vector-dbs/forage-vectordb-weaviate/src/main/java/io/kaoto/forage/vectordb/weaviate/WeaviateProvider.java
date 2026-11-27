@@ -46,7 +46,8 @@ import dev.langchain4j.store.embedding.weaviate.WeaviateEmbeddingStore;
  */
 @ForageBean(
         value = "weaviate",
-        components = {"camel-langchain4j-embeddings"},
+        components = {"camel-langchain4j-embeddingstore"},
+        feature = "Embedding Store",
         description = "Weaviate vector database")
 public class WeaviateProvider implements EmbeddingStoreProvider {
     private static final Logger LOG = LoggerFactory.getLogger(WeaviateProvider.class);
