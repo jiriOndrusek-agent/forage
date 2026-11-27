@@ -14,7 +14,11 @@ This guide covers both version-to-version upgrade notes and migrating from frame
 
 Keys without effect on Quarkus (catalog `quarkusIgnored`, today `forage.jms.pool.connection.timeout.millis`, which no runtime applies) do not block the translation; the export lists them in a note.
 
-The other modules (agent, CXF, InfluxDB, Spring RabbitMQ, security policies, TLS) stay `forage.*` with their Forage artifacts: no Quarkus extension builds the same bean from `quarkus.*` keys alone. For each one configured, the export prints a note with the module's reason (catalog `quarkusUnsupported`).
+InfluxDB 1 clients, Spring RabbitMQ connection factories and TLS parameters (`SSLContextParameters`) are written as plain Camel `camel.beans.<name>` keys (catalog `quarkusBeans`), with the same `${FORAGE_<KEY>:${forage.<key>:<value>}}` values, plus the native build keys: `quarkus.camel.native.reflection.include-patterns` (joined with yours), `quarkus.index-dependency.*`, `quarkus.native.resources.includes` for a classpath keystore, and for RabbitMQ `quarkus.native.additional-build-args`. Their Forage artifacts are left out. Only keys set or with a default are written. Such a module stays `forage.*` when a key set is not used by the bean (InfluxDB username without password, `forage.tls.cipher.suites`), the configuration name is not a plain Java name (`my-db`: `camel.beans` cannot bind it), or a value starts with `#` (InfluxDB: contains `'`).
+
+Differences: a TLS profile without keystore and truststore still gets a bean (Forage creates none); an unknown `forage.rabbitmq.cache.mode` fails at startup (Forage logs a warning and uses `CHANNEL`).
+
+The other modules (agent, CXF, InfluxDB 2, security policies) stay `forage.*` with their Forage artifacts. For each one configured, the export prints a note with the module's reason (catalog `quarkusUnsupported`).
 
 A module stays `forage.*`, with a note, when any of its keys has no Quarkus equivalent (`transaction.*`, `ssl.*`, repositories, named or non-Artemis JMS, ...), a value contains `{` or `}` or starts with `:`, two files set a key differently, it uses `%profile` keys or `application-<profile>.properties`, its module file (or a bean file such as `forage-jms-artemis.properties`) is in `~/.forage` / `FORAGE_CONFIG_DIR`, or the export reuses earlier run data. Set `FORAGE_QUARKUS_TRANSLATION_SKIP=true` (or `-Dforage.quarkus.translation.skip=true`) to keep everything on `forage.*`.
 

@@ -11,7 +11,7 @@ public class InfluxDB2ModuleDescriptor implements ForageModuleDescriptor<InfluxD
 
     /** Why the Quarkus export keeps this module on {@code forage.*}. Read by the catalog build. */
     public String quarkusUnsupportedReason() {
-        return "no extension creates the client from config";
+        return "no Camel Quarkus influxdb2 extension: a camel.beans.* client would work on JVM only";
     }
 
     @Override

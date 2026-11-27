@@ -25,7 +25,7 @@ public class SpringSecurityPolicyModuleDescriptor extends SecurityPolicyModuleDe
 
     /** Why the Quarkus export keeps this module on {@code forage.*}. Read by the catalog build. */
     public String quarkusUnsupportedReason() {
-        return "no Quarkus extension for camel-spring-security";
+        return "the AuthenticationManager comes from Spring Security; no Quarkus extension for camel-spring-security";
     }
 
     @Override
