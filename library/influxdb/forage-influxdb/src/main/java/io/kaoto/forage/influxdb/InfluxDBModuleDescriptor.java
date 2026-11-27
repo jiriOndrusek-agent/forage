@@ -1,7 +1,10 @@
 package io.kaoto.forage.influxdb;
 
+import java.util.List;
+import java.util.Map;
 import org.influxdb.InfluxDB;
 import io.kaoto.forage.core.common.ForageModuleDescriptor;
+import io.kaoto.forage.core.common.QuarkusBean;
 
 public class InfluxDBModuleDescriptor implements ForageModuleDescriptor<InfluxDBConfig, InfluxDBProvider> {
     @Override
@@ -9,9 +12,23 @@ public class InfluxDBModuleDescriptor implements ForageModuleDescriptor<InfluxDB
         return "influxdb";
     }
 
-    /** Why the Quarkus export keeps this module on {@code forage.*}. Read by the catalog build. */
-    public String quarkusUnsupportedReason() {
-        return "no extension creates the client from config";
+    private static final QuarkusBean QUARKUS_BEAN = new QuarkusBean(
+            List.of(
+                    "#class:org.influxdb.InfluxDBFactory#connect('{url}','{username}','{password}')",
+                    "#class:org.influxdb.InfluxDBFactory#connect('{url}')"),
+            Map.of(),
+            Map.of(),
+            List.of(),
+            List.of("org.influxdb:influxdb-java"),
+            List.of(),
+            List.of());
+
+    /**
+     * The Quarkus export creates the client as {@link InfluxDBProvider} does, with the factory method of the set keys
+     * (no extension creates it from config). Read by the catalog build.
+     */
+    public QuarkusBean quarkusBean() {
+        return QUARKUS_BEAN;
     }
 
     @Override

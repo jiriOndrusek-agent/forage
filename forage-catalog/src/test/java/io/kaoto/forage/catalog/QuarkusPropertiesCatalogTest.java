@@ -162,6 +162,7 @@ class QuarkusPropertiesCatalogTest {
             json.values().removeIf(v -> v instanceof Map<?, ?> m ? m.isEmpty() : ((List<?>) v).isEmpty());
             expected.put(((ForageModuleDescriptor<?, ?>) descriptor).modulePrefix(), json);
         }
+        assertThat(expected).containsKey("influxdb");
 
         assertThat(MAPPER.convertValue(read("forage-catalog.json").path("quarkusBeans"), Map.class))
                 .isEqualTo(expected);
