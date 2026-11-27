@@ -88,6 +88,46 @@ class QuarkusBeanExportTest {
                                 + "'${FORAGE_INFLUXDB_URL:${forage.influxdb.url:http://localhost:8086}}')");
     }
 
+    /** Every key with a default is written, so the bean is the one Forage creates (not the Spring defaults). */
+    @Test
+    void createsTheSpringRabbitMqConnectionFactory() throws IOException {
+        Files.writeString(
+                resources.resolve("forage-spring-rabbitmq.properties"),
+                "forage.rabbitmq.host=broker\nforage.rabbitmq.cache.mode=CONNECTION\n");
+
+        QuarkusExport.Result result = QuarkusExport.translate(resources, new Properties());
+
+        String bean = "camel.beans.rabbitConnectionFactory";
+        assertThat(result.modules()).containsExactly("rabbitmq");
+        assertThat(result.properties())
+                .containsEntry(bean, "#class:org.springframework.amqp.rabbit.connection.CachingConnectionFactory")
+                .containsEntry(
+                        bean + ".rabbitConnectionFactory.host",
+                        "${FORAGE_RABBITMQ_HOST:${forage.rabbitmq.host:broker}}")
+                .containsEntry(
+                        bean + ".rabbitConnectionFactory.automaticRecoveryEnabled",
+                        "${FORAGE_RABBITMQ_AUTOMATIC_RECOVERY_ENABLED:${forage.rabbitmq.automatic.recovery.enabled:true}}")
+                .containsEntry(
+                        bean + ".channelCacheSize",
+                        "${FORAGE_RABBITMQ_CHANNEL_CACHE_SIZE:${forage.rabbitmq.channel.cache.size:25}}")
+                .containsEntry(
+                        bean + ".cacheMode", "${FORAGE_RABBITMQ_CACHE_MODE:${forage.rabbitmq.cache.mode:CONNECTION}}")
+                .doesNotContainKey(bean + ".addresses")
+                .containsEntry(
+                        REFLECTION,
+                        "com.rabbitmq.client.ConnectionFactory,"
+                                + "org.springframework.amqp.rabbit.connection.AbstractConnectionFactory,"
+                                + "org.springframework.amqp.rabbit.connection.CachingConnectionFactory")
+                .containsEntry("quarkus.index-dependency.spring-rabbit.group-id", "org.springframework.amqp")
+                .containsEntry("quarkus.index-dependency.amqp-client.group-id", "com.rabbitmq")
+                .containsEntry(
+                        "quarkus.native.additional-build-args",
+                        "--initialize-at-run-time=com.rabbitmq.client.impl.NettyFrameHandlerFactory,"
+                                + "--initialize-at-run-time=com.rabbitmq.client.impl.NettyFrameHandlerFactory$NettyFrameHandler");
+        assertThat(result.properties().keySet().stream().filter(k -> k.startsWith(bean + ".")))
+                .hasSize(13);
+    }
+
     /** The exported app reads the values Forage reads: FORAGE_*, then -Dforage.*, then the exported value. */
     @Test
     void exportedValueIsOverridable() throws IOException {
@@ -117,6 +157,8 @@ class QuarkusBeanExportTest {
                 INFLUXDB_FILE + " | forage.my-db.influxdb.url=u | the bean name my-db cannot be a camel.beans.* name",
                 INFLUXDB_FILE
                         + " | forage.influxdb.url=it's | forage.influxdb.url cannot be written as a Camel argument",
+                "forage-spring-rabbitmq.properties | forage.rabbitmq.host=#bean:x"
+                        + " | forage.rabbitmq.host cannot be written as a Camel bean property",
             })
     void keepsModuleOnForage(String file, String lines, String reason) throws IOException {
         Files.writeString(resources.resolve(file), lines.replace(";", "\n"));

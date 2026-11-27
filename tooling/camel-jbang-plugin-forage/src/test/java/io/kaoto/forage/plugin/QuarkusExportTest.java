@@ -486,14 +486,13 @@ class QuarkusExportTest {
      */
     @Test
     void keepsModulesWithoutQuarkusMetadataOnForage() throws IOException {
-        assertThat(QuarkusExport.table(ForageCatalogReader.getInstance())).containsOnlyKeys("influxdb", "jdbc", "jms");
+        assertThat(QuarkusExport.table(ForageCatalogReader.getInstance()))
+                .containsOnlyKeys("influxdb", "jdbc", "jms", "rabbitmq");
         Map<String, String> files = Map.of(
                 "forage-agent-factory.properties",
                 "forage.agent.model.kind=ollama\nforage.agent.model.name=granite4:3b\n",
                 "forage-cxf.properties",
                 "forage.cxf.address=http://localhost:8080/hello\n",
-                "forage-spring-rabbitmq.properties",
-                "forage.rabbitmq.host=localhost\n",
                 "forage-security-tls.properties",
                 "forage.tls.keystore.path=keystore.p12\nforage.tls.keystore.type=PKCS12\n");
         for (var file : files.entrySet()) {
@@ -511,7 +510,7 @@ class QuarkusExportTest {
         assertThat(resources.resolve("application.properties")).doesNotExist();
         assertThat(run).isEqualTo(untranslated);
         assertThat(exported).isEqualTo(untranslated);
-        for (String module : List.of("agent", "cxf", "rabbitmq", "tls")) {
+        for (String module : List.of("agent", "cxf", "tls")) {
             assertThat(untranslated).anyMatch(d -> d.startsWith("mvn:io.kaoto.forage:") && d.contains(module));
         }
     }
