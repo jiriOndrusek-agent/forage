@@ -487,14 +487,14 @@ class QuarkusExportTest {
     @Test
     void keepsModulesWithoutQuarkusMetadataOnForage() throws IOException {
         assertThat(QuarkusExport.table(ForageCatalogReader.getInstance()))
-                .containsOnlyKeys("influxdb", "jdbc", "jms", "rabbitmq");
+                .containsOnlyKeys("influxdb", "jdbc", "jms", "rabbitmq", "tls");
         Map<String, String> files = Map.of(
                 "forage-agent-factory.properties",
                 "forage.agent.model.kind=ollama\nforage.agent.model.name=granite4:3b\n",
                 "forage-cxf.properties",
                 "forage.cxf.address=http://localhost:8080/hello\n",
                 "forage-security-tls.properties",
-                "forage.tls.keystore.path=keystore.p12\nforage.tls.keystore.type=PKCS12\n");
+                "forage.tls.keystore.path=keystore.p12\nforage.tls.cipher.suites=TLS_AES_128_GCM_SHA256\n");
         for (var file : files.entrySet()) {
             Files.writeString(project.resolve(file.getKey()), file.getValue());
             Files.writeString(resources.resolve(file.getKey()), file.getValue());

@@ -128,6 +128,72 @@ class QuarkusBeanExportTest {
                 .hasSize(13);
     }
 
+    /**
+     * One nested bean per level, only for the stores set; the keystore password is also the key password. A classpath
+     * store goes into the native image.
+     */
+    @Test
+    void createsTheTlsParameters() throws IOException {
+        Files.writeString(
+                resources.resolve("forage-security-tls.properties"),
+                "forage.tls.keystore.path=classpath:server.p12\nforage.tls.keystore.password=pw\n"
+                        + "forage.tls.keystore.type=PKCS12\nforage.tls.truststore.path=file:/etc/trust.jks\n");
+
+        QuarkusExport.Result result = QuarkusExport.translate(resources, new Properties());
+
+        String bean = "camel.beans.sslContextParameters";
+        String jsse = "#class:org.apache.camel.support.jsse.";
+        assertThat(result.modules()).containsExactly("tls");
+        assertThat(result.properties())
+                .containsEntry(bean, jsse + "SSLContextParameters")
+                .containsEntry(bean + ".keyManagers", jsse + "KeyManagersParameters")
+                .containsEntry(bean + ".keyManagers.keyStore", jsse + "KeyStoreParameters")
+                .containsEntry(
+                        bean + ".keyManagers.keyStore.resource",
+                        "${FORAGE_TLS_KEYSTORE_PATH:${forage.tls.keystore.path:classpath:server.p12}}")
+                .containsEntry(
+                        bean + ".keyManagers.keyPassword",
+                        "${FORAGE_TLS_KEYSTORE_PASSWORD:${forage.tls.keystore.password:pw}}")
+                .containsEntry(
+                        bean + ".keyManagers.keyStore.password",
+                        "${FORAGE_TLS_KEYSTORE_PASSWORD:${forage.tls.keystore.password:pw}}")
+                .containsEntry(bean + ".trustManagers.keyStore", jsse + "KeyStoreParameters")
+                .containsEntry(
+                        bean + ".trustManagers.keyStore.type",
+                        "${FORAGE_TLS_TRUSTSTORE_TYPE:${forage.tls.truststore.type:JKS}}")
+                .containsEntry(
+                        bean + ".secureSocketProtocol",
+                        "${FORAGE_TLS_SECURE_SOCKET_PROTOCOL:${forage.tls.secure.socket.protocol:TLSv1.3}}")
+                .doesNotContainKeys(bean + ".serverParameters", bean + ".serverParameters.clientAuthentication")
+                .containsEntry("quarkus.native.resources.includes", "server.p12")
+                .containsEntry(
+                        REFLECTION,
+                        "org.apache.camel.support.jsse.KeyManagersParameters,"
+                                + "org.apache.camel.support.jsse.KeyStoreParameters,"
+                                + "org.apache.camel.support.jsse.SSLContextParameters,"
+                                + "org.apache.camel.support.jsse.TrustManagersParameters");
+    }
+
+    /** Client authentication set: the server parameters bean. */
+    @Test
+    void createsTheTlsServerParameters() throws IOException {
+        Files.writeString(
+                resources.resolve("forage-security-tls.properties"),
+                "forage.tls.truststore.path=trust.jks\nforage.tls.client.authentication=REQUIRE\n");
+
+        QuarkusExport.Result result = QuarkusExport.translate(resources, new Properties());
+
+        assertThat(result.properties())
+                .containsEntry(
+                        "camel.beans.sslContextParameters.serverParameters",
+                        "#class:org.apache.camel.support.jsse.SSLContextServerParameters")
+                .containsEntry(
+                        "camel.beans.sslContextParameters.serverParameters.clientAuthentication",
+                        "${FORAGE_TLS_CLIENT_AUTHENTICATION:${forage.tls.client.authentication:REQUIRE}}")
+                .doesNotContainKey("camel.beans.sslContextParameters.keyManagers")
+                .containsEntry("quarkus.native.resources.includes", "trust.jks");
+    }
+
     /** The exported app reads the values Forage reads: FORAGE_*, then -Dforage.*, then the exported value. */
     @Test
     void exportedValueIsOverridable() throws IOException {
@@ -159,6 +225,8 @@ class QuarkusBeanExportTest {
                         + " | forage.influxdb.url=it's | forage.influxdb.url cannot be written as a Camel argument",
                 "forage-spring-rabbitmq.properties | forage.rabbitmq.host=#bean:x"
                         + " | forage.rabbitmq.host cannot be written as a Camel bean property",
+                "forage-security-tls.properties | forage.tls.keystore.path=k.p12;forage.tls.cipher.suites=TLS_AES_128_GCM_SHA256"
+                        + " | forage.tls.cipher.suites has no Quarkus equivalent",
             })
     void keepsModuleOnForage(String file, String lines, String reason) throws IOException {
         Files.writeString(resources.resolve(file), lines.replace(";", "\n"));
