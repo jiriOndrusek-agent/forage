@@ -21,7 +21,7 @@ public class ShiroSecurityPolicyModuleDescriptor extends SecurityPolicyModuleDes
 
     /** Why the Quarkus export keeps this module on {@code forage.*}. Read by the catalog build. */
     public String quarkusUnsupportedReason() {
-        return "no extension creates the ShiroSecurityPolicy from config";
+        return "the export does not translate one provider of the security policy factory yet";
     }
 
     @Override

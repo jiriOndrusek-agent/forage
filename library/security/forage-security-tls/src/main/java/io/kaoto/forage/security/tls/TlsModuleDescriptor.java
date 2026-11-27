@@ -1,7 +1,10 @@
 package io.kaoto.forage.security.tls;
 
+import java.util.List;
+import java.util.Map;
 import org.apache.camel.support.jsse.SSLContextParameters;
 import io.kaoto.forage.core.common.ForageModuleDescriptor;
+import io.kaoto.forage.core.common.QuarkusBean;
 
 /**
  * Describes the TLS module to the runtime adapters.
@@ -21,9 +24,35 @@ public class TlsModuleDescriptor implements ForageModuleDescriptor<TlsConfig, Tl
         return "tls";
     }
 
-    /** Why the Quarkus export keeps this module on {@code forage.*}. Read by the catalog build. */
-    public String quarkusUnsupportedReason() {
-        return "camel-quarkus-tls-registry is close but not equivalent yet (key password, client auth, protocols)";
+    private static final String JSSE = "#class:org.apache.camel.support.jsse.";
+
+    private static final QuarkusBean QUARKUS_BEAN = new QuarkusBean(
+            List.of(JSSE + "SSLContextParameters"),
+            Map.of(
+                    "keystore.path", List.of("keyManagers.keyStore.resource"),
+                    "keystore.password", List.of("keyManagers.keyStore.password", "keyManagers.keyPassword"),
+                    "keystore.type", List.of("keyManagers.keyStore.type"),
+                    "truststore.path", List.of("trustManagers.keyStore.resource"),
+                    "truststore.password", List.of("trustManagers.keyStore.password"),
+                    "truststore.type", List.of("trustManagers.keyStore.type"),
+                    "client.authentication", List.of("serverParameters.clientAuthentication"),
+                    "secure.socket.protocol", List.of("secureSocketProtocol")),
+            Map.of(
+                    "keyManagers", JSSE + "KeyManagersParameters",
+                    "keyManagers.keyStore", JSSE + "KeyStoreParameters",
+                    "trustManagers", JSSE + "TrustManagersParameters",
+                    "trustManagers.keyStore", JSSE + "KeyStoreParameters",
+                    "serverParameters", JSSE + "SSLContextServerParameters"),
+            List.of(),
+            List.of(),
+            List.of("keystore.path", "truststore.path"));
+
+    /**
+     * The Quarkus export creates the {@code SSLContextParameters} as {@link TlsProvider} does, one nested bean per
+     * level. {@code cipher.suites} (a list) keeps the module on {@code forage.*}. Read by the catalog build.
+     */
+    public QuarkusBean quarkusBean() {
+        return QUARKUS_BEAN;
     }
 
     @Override

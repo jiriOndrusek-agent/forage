@@ -34,6 +34,13 @@ public class ForageCatalog {
     @JsonProperty("quarkusUnsupported")
     private Map<String, String> quarkusUnsupported;
 
+    /**
+     * Per module (the module descriptor's prefix): how the Quarkus export creates its bean with {@code camel.beans.*}
+     * properties. Only written for modules declaring it.
+     */
+    @JsonProperty("quarkusBeans")
+    private Map<String, QuarkusBean> quarkusBeans;
+
     public ForageCatalog() {
         // Required by Jackson for deserialization
     }
@@ -84,5 +91,13 @@ public class ForageCatalog {
 
     public void setQuarkusUnsupported(Map<String, String> quarkusUnsupported) {
         this.quarkusUnsupported = quarkusUnsupported;
+    }
+
+    public Map<String, QuarkusBean> getQuarkusBeans() {
+        return quarkusBeans;
+    }
+
+    public void setQuarkusBeans(Map<String, QuarkusBean> quarkusBeans) {
+        this.quarkusBeans = quarkusBeans;
     }
 }

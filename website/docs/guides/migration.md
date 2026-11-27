@@ -14,7 +14,11 @@ This guide covers both version-to-version upgrade notes and migrating from frame
 
 Keys without effect on Quarkus (catalog `quarkusIgnored`, today `forage.jms.pool.connection.timeout.millis`, which no runtime applies) do not block the translation; the export lists them in a note.
 
-The other modules (agent, CXF, InfluxDB, Spring RabbitMQ, security policies, TLS) stay `forage.*` with their Forage artifacts: no Quarkus extension builds the same bean from `quarkus.*` keys alone. For each one configured, the export prints a note with the module's reason (catalog `quarkusUnsupported`).
+InfluxDB 1 clients, Spring RabbitMQ connection factories and TLS parameters (`SSLContextParameters`) are written as plain Camel `camel.beans.<name>` keys (catalog `quarkusBeans`), with the same `${FORAGE_<KEY>:${forage.<key>:<value>}}` values, plus the native build keys: `quarkus.camel.native.reflection.include-patterns` (joined with yours), `quarkus.index-dependency.*`, and `quarkus.native.resources.includes` for a classpath keystore. Their Forage artifacts are left out. Only keys set or with a default are written. Such a module stays `forage.*` when a key set is not used by the bean (InfluxDB username without password, `forage.tls.cipher.suites`), the configuration name is not a plain Java name (`my-db`: `camel.beans` cannot bind it), or a value starts with `#` (InfluxDB: contains `'`).
+
+Differences: a TLS profile without keystore and truststore still gets a bean (Forage creates none); an unknown `forage.rabbitmq.cache.mode` fails at startup (Forage logs a warning and uses `CHANNEL`).
+
+The other modules (agent, CXF, InfluxDB 2, security policies) stay `forage.*` with their Forage artifacts. For each one configured, the export prints a note with the module's reason (catalog `quarkusUnsupported`).
 
 The catalog (version `2.1`) and the configuration catalog (version `1.1`) gain new fields. Forage catalog readers before this release (1.7.x and older) reject unknown fields, so update tools that read the catalog with the Forage reader library together with the catalog; readers from this release on ignore unknown fields.
 

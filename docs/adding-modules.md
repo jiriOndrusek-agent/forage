@@ -280,6 +280,31 @@ public class MyModuleDescriptor implements ForageModuleDescriptor<MyModuleConfig
 - `translateProperties()` is only needed when Quarkus creates the primary bean natively — return empty map if Forage creates all beans
 - `auxiliaryBeans()` returns beans that must be created alongside the primary bean (e.g., aggregation repositories for JDBC)
 
+### Quarkus export (`camel export --runtime=quarkus`)
+
+Every descriptor declares exactly one of these (read by the catalog build, checked by `QuarkusPropertiesCatalogTest`):
+
+- `quarkusProperties()`: a Quarkus extension builds the bean from `quarkus.*` keys (JDBC, JMS).
+- `quarkusBean()`: no extension does, but plain Camel `camel.beans.*` keys can (InfluxDB 1, Spring RabbitMQ, TLS).
+- `quarkusUnsupportedReason()`: neither; the module stays `forage.*` and the export prints the reason.
+
+`quarkusBean()` returns a `QuarkusBean` (Forage keys after `forage.<module>.`):
+
+```java
+new QuarkusBean(
+        List.of("#class:org.influxdb.InfluxDBFactory#connect('{url}','{username}','{password}')",
+                "#class:org.influxdb.InfluxDBFactory#connect('{url}')"), // create: first whose {keys} are set
+        Map.of(),                                  // properties: Forage key -> bean properties (dotted: nested)
+        Map.of(),                                  // nested: bean property -> #class: value
+        List.of(),                                 // reflection: classes reached through getters
+        List.of("org.influxdb:influxdb-java"),     // indexDependencies (Jandex, for native)
+        List.of());                                // resources: keys naming a classpath resource
+```
+
+The export writes `camel.beans.<name>` keys, `quarkus.camel.native.reflection.include-patterns` for the `#class:` types
+and `reflection`, and `quarkus.index-dependency.*`. Map only what the bean takes as it is: a key set but not mapped (a
+unit conversion, a list, a `byte[]`) keeps the module on `forage.*`. Check the exported app on JVM and native.
+
 ---
 
 ## Step 4: Spring Boot Integration
