@@ -530,8 +530,7 @@ class QuarkusExportTest {
         assertThat(result.properties()).isEmpty();
         assertThat(result.notes())
                 .containsExactly(
-                        "Forage cxf stays as forage.* configuration: quarkus-cxf configures JAX-WS services,"
-                                + " not Camel CxfEndpoint beans.",
+                        "Forage cxf stays as forage.* configuration: " + reasons.get("cxf") + ".",
                         "Forage spring.security stays as forage.* configuration: " + reasons.get("spring.security")
                                 + ".");
     }
